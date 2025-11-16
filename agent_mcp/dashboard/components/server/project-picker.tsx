@@ -195,7 +195,7 @@ function AddServerDialog() {
   const [formData, setFormData] = useState({
     name: '',
     host: 'localhost',
-    port: 8080,
+    port: 3000,
     description: ''
   })
 
@@ -214,7 +214,7 @@ function AddServerDialog() {
     setFormData({
       name: '',
       host: 'localhost',
-      port: 8080,
+      port: 3000,
       description: ''
     })
     
@@ -266,8 +266,8 @@ function AddServerDialog() {
                 id="port"
                 type="number"
                 value={formData.port}
-                onChange={(e) => setFormData(prev => ({ ...prev, port: parseInt(e.target.value) || 8080 }))}
-                placeholder="8080"
+                onChange={(e) => setFormData(prev => ({ ...prev, port: parseInt(e.target.value) || 3000 }))}
+                placeholder="3000"
               />
             </div>
           </div>

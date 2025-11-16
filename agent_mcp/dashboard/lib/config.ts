@@ -9,7 +9,7 @@ export const config = {
   // Default server configuration
   defaultServer: {
     host: process.env.NEXT_PUBLIC_DEFAULT_SERVER_HOST || 'localhost',
-    port: parseInt(process.env.NEXT_PUBLIC_DEFAULT_SERVER_PORT || '8080'),
+    port: parseInt(process.env.NEXT_PUBLIC_DEFAULT_SERVER_PORT || '3000'),
     name: process.env.NEXT_PUBLIC_DEFAULT_SERVER_NAME || 'Local Development'
   },
   
@@ -17,7 +17,7 @@ export const config = {
   autoDetect: {
     enabled: process.env.NEXT_PUBLIC_AUTO_CONNECT !== 'false',
     // Try common MCP server ports, but exclude dashboard port
-    ports: (process.env.NEXT_PUBLIC_AUTO_DETECT_PORTS || '8080,8081,8082,8083,8084,8085,8086,8087,8088,8089,8090,8091,8092,8093,8094,8095,8000,8001,8002,8003,8004,8005,9000,9001,9002,9003')
+    ports: (process.env.NEXT_PUBLIC_AUTO_DETECT_PORTS || '3000,8080,8081,8082,8083,8084,8085,8086,8087,8088,8089,8090,8091,8092,8093,8094,8095,8000,8001,8002,8003,8004,8005,9000,9001,9002,9003')
       .split(',')
       .map(p => parseInt(p.trim()))
       .filter(p => !isNaN(p) && p !== 3847) // Exclude dashboard port
