@@ -16,7 +16,7 @@ def test_tui_display():
     server_status = {
         'running': True,
         'status': 'Running',
-        'port': 8080,
+        'port': 3000,
         'agent_count': 3,
         'task_count': 5
     }

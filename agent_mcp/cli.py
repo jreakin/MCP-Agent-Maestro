@@ -120,7 +120,7 @@ def get_admin_token_from_db(project_dir: str) -> Optional[str]:
 @click.option(
     "--port",
     type=int,
-    default=os.environ.get("PORT", 8080),  # Read from env var PORT if set, else 8080
+    default=os.environ.get("PORT", 3000),  # Read from env var PORT if set, else 3000
     show_default=True,
     help="Port to listen on for SSE and HTTP dashboard.",
 )
