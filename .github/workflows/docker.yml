@@ -71,6 +71,8 @@ jobs:
         platforms: linux/amd64,linux/arm64
         build-args: |
           BUILDKIT_INLINE_CACHE=1
+        env:
+          DOCKER_BUILDKIT: 1
     
     - name: Image digest
       run: echo "Image pushed with digest ${{ steps.build-and-push.outputs.digest }}"

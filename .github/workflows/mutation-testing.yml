@@ -38,7 +38,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'uv'
       
       - name: Install uv
         run: |
@@ -47,11 +46,12 @@ jobs:
       
       - name: Cache Python dependencies
         uses: actions/cache@v4
+        id: cache-uv
         with:
           path: |
             ~/.cache/uv
             ~/.local/share/uv
-          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-
       

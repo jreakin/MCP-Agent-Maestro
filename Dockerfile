@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # MCP Agent Maestro Dockerfile
 FROM python:3.10-slim
 
@@ -24,6 +25,7 @@ COPY uv.lock* ./
 # Install Python dependencies (including dev dependencies for testing tools and pydantic-ai)
 # This layer is cached unless pyproject.toml or uv.lock changes
 RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.local/share/uv \
     uv pip install --system -e ".[dev,pydantic-ai]"
 
 # Copy application code last (changes most frequently)
