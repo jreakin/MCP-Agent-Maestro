@@ -30,6 +30,7 @@ jobs:
         config: ".cspell.json"
         incremental_files_only: false
         check_dot_files: true
+        root: .
       continue-on-error: true
   
   link-check:

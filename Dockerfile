@@ -4,7 +4,7 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (separate layer for better caching)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -13,16 +13,21 @@ RUN apt-get update && apt-get install -y \
     llvm \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast Python package management
+# Install uv for fast Python package management (cached layer)
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files
-COPY pyproject.toml uv.lock* ./
+# Copy dependency files first (for better layer caching)
+# This layer only changes when dependencies change
+COPY pyproject.toml ./
+COPY uv.lock* ./
 
 # Install Python dependencies (including dev dependencies for testing tools and pydantic-ai)
-RUN uv pip install --system -e ".[dev,pydantic-ai]"
+# This layer is cached unless pyproject.toml or uv.lock changes
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -e ".[dev,pydantic-ai]"
 
-# Copy application code
+# Copy application code last (changes most frequently)
+# Only this layer invalidates when code changes
 COPY . .
 
 # Create directory for project data

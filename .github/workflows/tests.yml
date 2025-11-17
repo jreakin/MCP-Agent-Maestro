@@ -35,9 +35,20 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+        cache: 'uv'
     
     - name: Install uv
       run: pip install uv
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
     
     - name: Install dependencies
       run: uv pip install --system -e ".[dev]"
@@ -71,11 +82,16 @@ jobs:
       id: test_coverage
       run: |
         uv run pytest tests/ --ignore=tests/benchmarks --cov=agent_mcp --cov-report=xml --cov-report=html --cov-report=term -v --tb=short | tee pytest_output.txt
-        # Extract test statistics
-        PASSED=$(grep -oP '\d+(?=\s+passed)' pytest_output.txt | head -1 || echo "0")
-        FAILED=$(grep -oP '\d+(?=\s+failed)' pytest_output.txt | head -1 || echo "0")
-        SKIPPED=$(grep -oP '\d+(?=\s+skipped)' pytest_output.txt | head -1 || echo "0")
-        TOTAL=$(grep -oP '\d+(?=\s+passed)' pytest_output.txt | head -1 || echo "0")
+        # Extract test statistics (using sed instead of perl regex for compatibility)
+        PASSED=$(grep -oE '[0-9]+ passed' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
+        FAILED=$(grep -oE '[0-9]+ failed' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
+        SKIPPED=$(grep -oE '[0-9]+ skipped' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
+        # Total is sum of all test results
+        TOTAL=$((PASSED + FAILED + SKIPPED))
+        if [ "$TOTAL" -eq 0 ]; then
+          # Fallback: try to extract from different format
+          TOTAL=$(grep -oE '[0-9]+ passed' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
+        fi
         echo "passed=$PASSED" >> $GITHUB_OUTPUT
         echo "failed=$FAILED" >> $GITHUB_OUTPUT
         echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
