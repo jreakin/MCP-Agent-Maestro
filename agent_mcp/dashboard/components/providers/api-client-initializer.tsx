@@ -8,13 +8,6 @@ export function ApiClientInitializer() {
   const { activeServerId, servers } = useServerStore()
   const [isHydrated, setIsHydrated] = useState(false)
 
-<<<<<<< HEAD
-  // Hydrate the store on client side
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      useServerStore.persist.rehydrate()
-      setIsHydrated(true)
-=======
   // Hydrate the store on client side and switch to real localStorage storage
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -48,7 +41,6 @@ export function ApiClientInitializer() {
         console.warn('Failed to initialize localStorage:', e)
         setIsHydrated(true)
       }
->>>>>>> feature/port-3000-default
     }
   }, [])
 

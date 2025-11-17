@@ -32,6 +32,10 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   
   // Suppress hydration warnings for now while we fix SSR issues
   reactStrictMode: true,

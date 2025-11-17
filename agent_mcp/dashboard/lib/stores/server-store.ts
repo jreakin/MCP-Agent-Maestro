@@ -1,24 +1,7 @@
 import { create } from 'zustand'
-<<<<<<< HEAD
-import { persist, createJSONStorage } from 'zustand/middleware'
-=======
-import { persist, PersistStorage } from 'zustand/middleware'
->>>>>>> feature/port-3000-default
+import { persist, createJSONStorage, PersistStorage } from 'zustand/middleware'
 import { apiClient } from '../api'
 import { config, getAutoDetectServers } from '../config'
-
-// SSR-safe storage for zustand persist
-const getStorage = () => {
-  if (typeof window === 'undefined') {
-    // Return a no-op storage for SSR
-    return {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-    } as any
-  }
-  return createJSONStorage(() => localStorage)
-}
 
 export interface MCPServer {
   id: string
@@ -283,20 +266,12 @@ export const useServerStore = create<ServerStore>()(
     }),
     {
       name: 'mcp-server-store',
-<<<<<<< HEAD
-      storage: getStorage(),
-=======
       storage: noOpStorage, // Always use no-op initially - will be hydrated on client
->>>>>>> feature/port-3000-default
       partialize: (state) => ({
         servers: state.servers,
         activeServerId: state.activeServerId
       }),
-<<<<<<< HEAD
-      skipHydration: true, // Skip hydration during SSR
-=======
       skipHydration: true, // Skip hydration during SSR - manually hydrate on client
->>>>>>> feature/port-3000-default
     }
   )
 )
