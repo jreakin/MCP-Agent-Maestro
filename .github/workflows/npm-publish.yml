@@ -38,7 +38,6 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          uv venv
           uv pip install -e .
       
       - name: Verify package structure

@@ -180,10 +180,11 @@ jobs:
         fi
     
     - name: Start Dashboard server
-      working-directory: agent_mcp/dashboard
       run: |
-        PORT=3001 npm start &
-        echo $! > dashboard_server.pid
+        mkdir -p /tmp/dashboard
+        cd agent_mcp/dashboard
+        PORT=3001 npm start > /tmp/dashboard/dashboard_server.log 2>&1 &
+        echo $! > /tmp/dashboard/dashboard_server.pid
         sleep 10  # Wait for server to start
       env:
         NEXT_PUBLIC_DEFAULT_SERVER_HOST: localhost
@@ -227,8 +228,8 @@ jobs:
         if [ -f api_server.pid ]; then
           kill $(cat api_server.pid) 2>/dev/null || true
         fi
-        if [ -f agent_mcp/dashboard/dashboard_server.pid ]; then
-          kill $(cat agent_mcp/dashboard/dashboard_server.pid) 2>/dev/null || true
+        if [ -f /tmp/dashboard/dashboard_server.pid ]; then
+          kill $(cat /tmp/dashboard/dashboard_server.pid) 2>/dev/null || true
         fi
         pkill -f "agent_mcp.cli" || true
         pkill -f "next start" || true

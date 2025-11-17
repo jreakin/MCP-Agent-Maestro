@@ -75,7 +75,7 @@ jobs:
         uv pip install --system types-requests
     
     - name: Run mypy
-      run: uv run mypy agent_mcp --ignore-missing-imports || echo "Type checking completed with errors (non-blocking)"
+      run: uv run mypy agent_mcp --ignore-missing-imports 2>&1 || echo "Type checking completed with errors (non-blocking)"
   
   security-scan:
     name: Security Scan with Bandit
