@@ -8,6 +8,7 @@ on:
 
 jobs:
   lint:
+    name: Lint with Ruff
     runs-on: ubuntu-latest
     
     steps:
@@ -21,13 +22,102 @@ jobs:
     - name: Install uv
       run: pip install uv
     
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      id: cache-uv
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+    
     - name: Install dependencies
       run: uv pip install --system -e ".[dev]"
     
     - name: Run Ruff linter
       run: uv run ruff check . --output-format=github
-      continue-on-error: true
     
     - name: Run Ruff formatter check
       run: uv run ruff format --check .
-      continue-on-error: true
+  
+  type-check:
+    name: Type Check with mypy
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Make non-blocking for now
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      id: cache-uv
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+    
+    - name: Install dependencies (including mypy)
+      run: |
+        uv pip install --system -e ".[dev]"
+        uv pip install --system types-requests
+    
+    - name: Run mypy
+      run: uv run mypy agent_mcp --ignore-missing-imports || echo "Type checking completed with errors (non-blocking)"
+  
+  security-scan:
+    name: Security Scan with Bandit
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      id: cache-uv
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+    
+    - name: Install dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Run Bandit security scan
+      run: |
+        uv run bandit -ll -i -r agent_mcp/ \
+          --skip B101,B601 \
+          --exclude '*/tests/*,*/docs/*,*/migrations/*' \
+          -f json -o bandit-report.json || true
+    
+    - name: Upload Bandit report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: bandit-report
+        path: bandit-report.json
+        retention-days: 30
+

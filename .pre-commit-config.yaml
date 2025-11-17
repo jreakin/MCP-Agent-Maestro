@@ -1,0 +1,32 @@
+# Pre-commit hooks for MCP Agent Maestro
+# Install with: pip install pre-commit && pre-commit install
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.5
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-isort
+    rev: v5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=black]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
+    hooks:
+      - id: bandit
+        args: [-ll, -i, --skip, B101,B601]
+        exclude: ^(tests/|docs/)
+
+  - repo: local
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        entry: bash -c 'find . -type f \( -name "*.py" -o -name "*.md" -o -name "*.yaml" -o -name "*.yml" \) -exec sed -i "" "s/[[:space:]]*$//" {} \;'
+        language: system
+        pass_filenames: false
+

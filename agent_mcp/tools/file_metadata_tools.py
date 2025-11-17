@@ -1,7 +1,7 @@
 # Agent-MCP/mcp_template/mcp_server_src/tools/file_metadata_tools.py
 import json
 import datetime
-import sqlite3
+import psycopg2
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -13,7 +13,7 @@ from ..core.config import logger
 from ..core import globals as g  # For agent_working_dirs
 from ..core.auth import get_agent_id, verify_token
 from ..utils.audit_utils import log_audit
-from ..db.connection import get_db_connection
+from ..db import get_db_connection, return_connection
 from ..db.actions.agent_actions_db import log_agent_action_to_db
 
 
@@ -80,7 +80,7 @@ async def view_file_metadata_tool_impl(
         cursor = conn.cursor()
         # main.py:1521
         cursor.execute(
-            "SELECT metadata, updated_by, last_updated, content_hash FROM file_metadata WHERE filepath = ?",
+            "SELECT metadata, updated_by, last_updated, content_hash FROM file_metadata WHERE filepath = %s",
             (normalized_filepath_str,),
         )
         row = cursor.fetchone()
@@ -111,7 +111,7 @@ async def view_file_metadata_tool_impl(
         else:  # main.py:1527
             response_message = f"No metadata found for file '{filepath_arg}' (normalized: {normalized_filepath_str})."
 
-    except sqlite3.Error as e_sql:  # main.py:1529
+    except psycopg2.Error as e_sql:  # main.py:1529
         logger.error(
             f"Database error viewing file metadata for '{normalized_filepath_str}': {e_sql}",
             exc_info=True,
@@ -133,7 +133,7 @@ async def view_file_metadata_tool_impl(
         response_message = f"An unexpected error occurred: {e}"
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
     return [mcp_types.TextContent(type="text", text=response_message)]
 
@@ -221,13 +221,18 @@ async def update_file_metadata_tool_impl(
         # (main.py:1561-1565)
         cursor.execute(
             """
-            INSERT OR REPLACE INTO file_metadata (filepath, metadata, last_updated, updated_by)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO file_metadata (filepath, metadata, last_updated, updated_by)
+            VALUES (%s, %s, CURRENT_TIMESTAMP, %s)
+            ON CONFLICT (filepath) DO UPDATE SET
+                metadata = %s,
+                last_updated = CURRENT_TIMESTAMP,
+                updated_by = %s
         """,
             (
                 normalized_filepath_str,
                 metadata_json_str,
-                updated_at_iso,
+                requesting_admin_id,
+                metadata_json_str,
                 requesting_admin_id,
             ),
         )
@@ -250,7 +255,7 @@ async def update_file_metadata_tool_impl(
             )
         ]
 
-    except sqlite3.Error as e_sql:  # main.py:1566
+    except psycopg2.Error as e_sql:  # main.py:1566
         if conn:
             conn.rollback()
         logger.error(
@@ -276,7 +281,7 @@ async def update_file_metadata_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- Register file metadata tools ---

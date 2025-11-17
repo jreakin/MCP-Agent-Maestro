@@ -3,9 +3,9 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-mcp"
-version = "2.5.0"
-description = "AgentMCP v2.5 - Enhanced multi-agent system with tmux integration and worktree support"
+name = "mcp-agent-maestro"
+version = "0.2.0"
+description = "MCP Agent Maestro v0.2.0 - Enhanced multi-agent system with tmux integration and worktree support"
 authors = [
     {name = "Luis Alejandro Rincon", email = "alejandro@rinconnect.com"},
 ]
@@ -25,18 +25,35 @@ dependencies = [
     "uvicorn",
     "jinja2",
     "python-dotenv",
-    "sqlite-vec",
     "httpx",
     "mcp>=1.8.1",
+    "psycopg2-binary>=2.9.0",  # PostgreSQL adapter
+    "pgvector>=0.3.0",  # PostgreSQL vector extension
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "toon-format>=0.1.0",  # TOON (Token-Oriented Object Notation) for efficient serialization
 ]
 
 [project.optional-dependencies]
+# PydanticAI for structured agent orchestration (optional)
+pydantic-ai = [
+    "pydantic-ai>=0.0.12",
+]
 dev = [
-    "pytest",
+    "pytest>=8.3.2",
     "pytest-asyncio",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.5.5",
+    "mypy",
+    "bandit",
     "black",
     "isort",
+    "hypothesis>=6.100",
+    "hypothesis[pydantic]>=6.100",
+    "mutmut>=2.4.0",
+    "atheris>=2.1.0",
 ]
+# Install with: uv pip install -e ".[pydantic-ai]" or uv sync --extra pydantic-ai
 
 [tool.setuptools]
 py-modules = []
@@ -60,10 +77,17 @@ dev-dependencies = [
 run = { cmd = "uv run -m agent-mcp.cli -- server --project-dir ." }
 start = { cmd = "uv run -m agent-mcp.cli -- server --project-dir ." }
 cli = { cmd = "uv run -m agent-mcp.cli --" }
-test = { cmd = "pytest" }
+# Test script - runs in Docker container for consistency
+# Usage: uv run test [test_path] [pytest_args]
+# Example: uv run test tests/test_task_models.py -v
+# Note: This requires Docker containers to be running (docker-compose up -d)
+test = { cmd = "bash scripts/run_tests_docker.sh" }
 lint = { cmd = "ruff check ." }
 format = { cmd = "ruff format ." }
 index = { cmd = "uv run -m agent-mcp.features.rag.indexing -- --project-dir ." }
+# Mutation testing (run in container: docker-compose exec agent-mcp uv run mutate)
+mutate = { cmd = "mutmut run" }
+mutate-apply = { cmd = "mutmut apply" }
 
 [tool.black]
 line-length = 88
@@ -79,3 +103,9 @@ line_length = 88
 [tool.ruff.lint.isort]
 known-first-party = ["agent-mcp"]
 # ... existing code ...
+
+[tool.mutmut]
+paths_to_mutate = "agent_mcp/"
+tests_dir = "tests/"
+runner = "uv run pytest {test_path} -x"
+timeout_factor = 2.0

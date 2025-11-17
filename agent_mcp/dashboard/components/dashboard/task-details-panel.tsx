@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from 'react'
-import { X, Clock, User, Hash, AlertCircle, CheckCircle2, Activity, MessageSquare, GitBranch, Target, Zap, ChevronRight } from 'lucide-react'
+import { X, Clock, User, Hash, AlertCircle, CheckCircle2, Activity, MessageSquare, GitBranch, Target, Zap, ChevronRight, Edit2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -12,9 +12,10 @@ import { useDataStore } from '@/lib/stores/data-store'
 interface TaskDetailsPanelProps {
   task: Task | null
   onClose: () => void
+  onEdit?: () => void
 }
 
-export function TaskDetailsPanel({ task, onClose }: TaskDetailsPanelProps) {
+export function TaskDetailsPanel({ task, onClose, onEdit }: TaskDetailsPanelProps) {
   const { data } = useDataStore()
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
 
@@ -105,14 +106,27 @@ export function TaskDetailsPanel({ task, onClose }: TaskDetailsPanelProps) {
                   </Badge>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onClose}
-                className="h-7 w-7 flex-shrink-0 ml-2"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex items-center gap-1">
+                {onEdit && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onEdit}
+                    className="h-7 w-7 flex-shrink-0"
+                    title="Edit task"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="h-7 w-7 flex-shrink-0"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           </div>
 

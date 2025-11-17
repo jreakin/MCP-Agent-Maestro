@@ -51,6 +51,14 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Mutation testing
+.mutmut-cache/
+
+# Fuzzing corpus and artifacts
+.corpus/
+*.crash
+*.timeout
+
 # Translations
 *.mo
 *.pot
@@ -319,11 +327,19 @@ Thumbs.db
 *.agent.log
 agent_audit.log
 mcp_server.log
+project-data/
+project-data/**
 uv.lock
 .mcp.json
 *.jsonl
 *.lock
 *.db
+
+# Build artifacts
+agent_mcp.egg-info/
+*.egg-info/
+dist/
+build/
 
 # Backup files
 *.bak

@@ -1,31 +1,86 @@
-# Agent-MCP
+# 🎭 MCP Agent Maestro
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/rinadelph/Agent-MCP)
+![Agent MCP Maestro Logo](assets/images/agent-mcp-maestro-banner.png)
 
-> 🚀 **Advanced Tool Notice**: This framework is designed for experienced AI developers who need sophisticated multi-agent orchestration capabilities. Agent-MCP requires familiarity with AI coding workflows, MCP protocols, and distributed systems concepts. We're actively working to improve documentation and ease of use. If you're new to AI-assisted development, consider starting with simpler tools and returning when you need advanced multi-agent capabilities.
->
-> 💬 **Join the Community**: Connect with us on [Discord](https://discord.gg/7Jm7nrhjGn) to get help, share experiences, and collaborate with other developers building multi-agent systems.
 
-Multi-Agent Collaboration Protocol for coordinated AI software development.
+---
 
-<div align="center">
-  <img src="assets/images/agent-network-viz.png" alt="Agent Network Visualization" width="600">
-</div>
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](https://opensource.org/licenses/AGPL-3.0)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://github.com/jreakin/mcp-agent-maestro/workflows/Tests/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/tests.yml)
+[![Lint](https://github.com/jreakin/mcp-agent-maestro/workflows/Code%20Quality/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/lint.yml)
+[![Security](https://github.com/jreakin/mcp-agent-maestro/workflows/Security/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/security.yml)
+[![Deploy Check](https://github.com/jreakin/mcp-agent-maestro/workflows/Deploy%20and%20Health%20Check/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/deploy-check.yml)
+[![Coverage](https://codecov.io/gh/jreakin/mcp-agent-maestro/branch/main/graph/badge.svg)](https://codecov.io/gh/jreakin/mcp-agent-maestro)
 
-Think **Obsidian for your AI agents** - a living knowledge graph where multiple AI agents collaborate through shared context, intelligent task management, and real-time visualization. Watch your codebase evolve as specialized agents work in parallel, never losing context or stepping on each other's work.
+**Total Tests:** 138 (127 passed, 11 skipped)
 
-## Why Multiple Agents?
+### 🛠️ Built With
 
-Beyond the philosophical issues, traditional AI coding assistants hit practical limitations:
-- **Context windows overflow** on large codebases
-- **Knowledge gets lost** between conversations
-- **Single-threaded execution** creates bottlenecks
-- **No specialization** - one agent tries to do everything
-- **Constant rework** from lost context and confusion
+**Core Python Stack:**
+- **Pydantic** `>=2.0` - Data validation and settings management
+- **PydanticAI** `>=0.0.12` (optional) - Structured agent orchestration
+- **Starlette** - Modern async web framework
+- **Uvicorn** - ASGI server for high-performance async applications
+- **Click** - Command-line interface framework
+- **AnyIO** - Async I/O library
 
-## The Multi-Agent Solution
+**AI & LLM Integration:**
+- **OpenAI** - GPT models and embeddings
+- **MCP SDK** `>=1.8.1` - Model Context Protocol implementation
 
-Agent-MCP transforms AI development from a single assistant to a coordinated team:
+**Database & Storage:**
+- **PostgreSQL** with **pgvector** `>=0.3.0` - Vector search and persistent storage
+- **psycopg2-binary** `>=2.9.0` - PostgreSQL adapter
+
+**Data Serialization:**
+- **TOON Format** `>=0.1.0` - Token-Oriented Object Notation for efficient serialization
+
+**Frontend Dashboard:**
+- **Next.js** `15.3.4` - React framework
+- **React** `^19.0.0` - UI library
+- **Radix UI** - Accessible component primitives
+- **Tailwind CSS** `^4` - Utility-first CSS framework
+- **Recharts** - Data visualization
+
+**Development Tools:**
+- **pytest** `>=8.3.2` - Testing framework
+- **ruff** `>=0.5.5` - Fast Python linter and formatter
+- **mypy** - Static type checking
+- **mutmut** - Mutation testing
+- **hypothesis** `>=6.100` - Property-based testing
+
+> **Orchestrating AI Agents Like a Symphony** 🎵
+
+**MCP Agent Maestro** is a sophisticated multi-agent orchestration framework that coordinates specialized AI agents to work harmoniously on complex software development tasks. Like a conductor leading an orchestra, Maestro ensures each agent performs its part at the right time, creating a seamless development experience.
+
+> 📦 **Fork Information**: This is a fork of [Agent-MCP](https://github.com/rinadelph/Agent-MCP) created by John R. Eakin ([github.com/jreakin](https://github.com/jreakin)). For the original project, visit the [Agent-MCP repository](https://github.com/rinadelph/Agent-MCP).
+
+
+## 🎼 The Maestro Philosophy
+
+Traditional AI coding assistants are solo performers—they try to do everything themselves and often struggle with complex, multi-faceted projects. **MCP Agent Maestro** takes a different approach:
+
+### The Orchestra Metaphor
+
+```
+🎻 Frontend Agent    →  Crafting beautiful UIs
+🎺 Backend Agent     →  Building robust APIs
+🥁 Testing Agent     →  Ensuring quality
+🎹 Database Agent    →  Designing data models
+🎸 Security Agent    →  Protecting the system
+
+    👨‍🎤 Maestro        →  Conducting the symphony
+```
+
+Each agent is a virtuoso in their domain, and the Maestro coordinates them through:
+
+- **Shared Memory** - A living knowledge graph that all agents contribute to and learn from
+- **Task Choreography** - Breaking complex work into harmonized, parallelizable tasks
+- **Real-time Coordination** - Preventing conflicts and ensuring smooth collaboration
+- **Visual Monitoring** - A beautiful dashboard to watch your AI orchestra perform
+
+## ✨ Key Features
 
 <div align="center">
   <img src="assets/images/dashboard-overview.png" alt="Multi-Agent Collaboration Network" width="800">
@@ -33,35 +88,219 @@ Agent-MCP transforms AI development from a single assistant to a coordinated tea
 
 **Real-time visualization** shows your AI team at work - purple nodes represent context entries, blue nodes are agents, and connections show active collaborations. It's like having a mission control center for your development team.
 
-### Core Capabilities
+### 🎯 Specialized Agent Roles
 
-**Parallel Execution**  
-Multiple specialized agents work simultaneously on different parts of your codebase. Backend agents handle APIs while frontend agents build UI components, all coordinated through shared memory.
+Create agents with specific expertise:
+- **Frontend Virtuosos** - React, Vue, Svelte specialists
+- **Backend Maestros** - API, database, and infrastructure experts
+- **Testing Conductors** - Unit, integration, and E2E testing
+- **Security Guardians** - Vulnerability scanning and secure coding
+- **DevOps Harmonizers** - CI/CD, deployment, and monitoring
 
-**Persistent Knowledge Graph**  
+### 🧠 Persistent Knowledge Graph
+
+Every decision, pattern, and architectural choice is stored in a searchable knowledge graph using advanced RAG (Retrieval-Augmented Generation):
+
+- **Vector embeddings** for semantic search
+- **PostgreSQL + pgvector** for production-ready storage
+- **Automatic indexing** of code, docs, and conversations
+- **Context continuity** across sessions
+
+### 📊 Real-Time Dashboard
 
 <div align="center">
-  <img src="assets/images/memory-bank.png" alt="Memory Bank Interface" width="800">
+  <img src="assets/images/maestro-dashboard.png" alt="Maestro Dashboard" width="800">
 </div>
 
-Your project's entire context lives in a searchable, persistent memory bank. Agents query this shared knowledge to understand requirements, architectural decisions, and implementation details. Nothing gets lost between sessions.
+Watch your AI orchestra perform in real-time:
+- **Agent Status** - See what each agent is working on
+- **Task Flow** - Visualize task dependencies and progress
+- **Knowledge Graph** - Explore the shared memory
+- **Performance Metrics** - Monitor agent efficiency
 
-**Intelligent Task Management**  
+### 🔒 Enterprise-Grade Security
 
-<div align="center">
-  <img src="assets/images/agent-fleet.png" alt="Agent Fleet Management" width="800">
-</div>
+Built-in security features:
+- **Prompt injection detection**
+- **Tool call sanitization**
+- **Access control and authentication**
+- **Audit logging**
 
-Monitor every agent's status, assigned tasks, and recent activity. The system automatically manages task dependencies, prevents conflicts, and ensures work flows smoothly from planning to implementation.
+## 🚀 Quick Start
 
-## Quick Start
+### One-Command Installation
 
-### Python Implementation (Recommended)
+```bash
+# Clone MCP Agent Maestro
+git clone https://github.com/jreakin/mcp-agent-maestro.git
+cd mcp-agent-maestro
+
+# Run the interactive setup wizard
+./scripts/setup.sh
+```
+
+The setup wizard will:
+- ✅ Check prerequisites (Docker, Node.js, Python)
+- ✅ Configure your AI provider (OpenAI or Ollama)
+- ✅ Set up the database
+- ✅ Launch the dashboard
+- ✅ Create your first conductor agent
+
+### Access Your Orchestra
+
+Once setup completes:
+- **Dashboard**: http://localhost:3000
+- **API Docs**: http://localhost:8080/docs
+- **Health Check**: http://localhost:8080/health
+
+## 🎭 The Maestro Workflow
+
+### 1. Initialize the Conductor
+
+Your first agent is the **Conductor** - responsible for orchestrating all other agents:
+
+```bash
+maestro init --role conductor
+```
+
+### 2. Define Your Symphony (MCD)
+
+Create a **Main Context Document** that serves as the musical score for your project:
+
+```markdown
+# Project Symphony: My Application
+
+## Movements (Phases)
+
+1. Foundation - Database schema and API structure
+2. Performance - Core business logic
+3. Presentation - UI components
+4. Finale - Testing and deployment
+
+## Instruments (Agents Needed)
+
+- Backend Agent (Django/FastAPI)
+- Frontend Agent (React)
+- Database Agent (PostgreSQL)
+- Testing Agent (Pytest)
+```
+
+### 3. Summon Your Orchestra
+
+The Conductor creates specialized agents:
+
+```python
+# Backend virtuoso
+await maestro.summon_agent(
+    role="backend",
+    specialization="FastAPI + SQLModel",
+    focus="User authentication APIs"
+)
+
+# Frontend virtuoso
+await maestro.summon_agent(
+    role="frontend",
+    specialization="React + TypeScript",
+    focus="Login and registration flows"
+)
+```
+
+### 4. Conduct the Performance
+
+Assign tasks and watch the magic happen:
+
+```python
+# Parallel execution
+await maestro.conduct([
+    Task("Create user model", agent="backend"),
+    Task("Design login form", agent="frontend"),
+    Task("Write auth tests", agent="testing")
+])
+```
+
+## 🎵 Advanced Features
+
+### Multi-Agent Patterns
+
+**Parallel Composition**
+```python
+# Multiple agents work simultaneously
+backend_task = await backend_agent.implement_api()
+frontend_task = await frontend_agent.build_ui()
+results = await asyncio.gather(backend_task, frontend_task)
+```
+
+**Sequential Harmony**
+```python
+# Agents build on each other's work
+schema = await database_agent.design_schema()
+models = await backend_agent.generate_models(schema)
+views = await frontend_agent.create_views(models)
+```
+
+**Collaborative Improvisation**
+```python
+# Agents communicate and adapt
+await security_agent.review(backend_agent.latest_code)
+await backend_agent.apply_fixes(security_agent.recommendations)
+```
+
+### Test Run (See It in Action!) 🧪
+
+Want to quickly see the dashboard with sample data?
+
+```bash
+# Start everything with test data
+./scripts/test-run.sh --seed
+```
+
+This starts all services and populates the dashboard with sample agents, tasks, and context. Perfect for exploring the UI!
+
+See [Test Run Guide](./TEST_RUN_GUIDE.md) for details.
+
+### Alternative: Python CLI Setup
+
+```bash
+# Install MCP Agent Maestro
+uv pip install -e .
+
+# Run interactive setup
+uv run -m agent_mcp.cli setup
+
+# Check your setup
+uv run -m agent_mcp.cli doctor
+```
+
+### Docker Compose (Manual Setup)
+
+For manual setup without the wizard:
+
+```bash
+# Create .env file with your OpenAI API key
+echo "OPENAI_API_KEY=sk-your-key-here" > .env
+echo "DB_PASSWORD=your_secure_password" >> .env
+
+# Start all services (Backend + Dashboard + PostgreSQL)
+docker-compose up -d
+
+# Access:
+# - Dashboard UI: http://localhost:3000
+# - Backend API: http://localhost:8080
+# - API Docs: http://localhost:8080/docs
+```
+
+**All services start automatically** - no need to run the dashboard separately!
+
+See [Quick Start Guide](./docs/setup/QUICK_START.md) for detailed manual instructions.
+
+### Python Implementation (Local Development)
+
+For local development without Docker:
 
 ```bash
 # Clone and setup
-git clone https://github.com/rinadelph/Agent-MCP.git
-cd Agent-MCP
+git clone https://github.com/jreakin/mcp-agent-maestro.git
+cd mcp-agent-maestro
 
 # Check version requirements
 python --version  # Should be >=3.10
@@ -83,12 +322,14 @@ uv run -m agent_mcp.cli --port 8080 --project-dir path-to-directory
 cd agent_mcp/dashboard && npm install && npm run dev
 ```
 
+**Note**: Local development requires a PostgreSQL database. See [DOCKER_SETUP.md](./DOCKER_SETUP.md) for database setup options.
+
 ### Node.js/TypeScript Implementation (Alternative)
 
 ```bash
 # Clone and setup
-git clone https://github.com/rinadelph/Agent-MCP.git
-cd Agent-MCP/agent-mcp-node
+git clone https://github.com/jreakin/mcp-agent-maestro.git
+cd mcp-agent-maestro/agent-mcp-node
 
 # Install dependencies
 npm install
@@ -583,7 +824,7 @@ Most AI coding assistants maintain conversations across entire projects:
 - **Performance degrades over time** - every response processes irrelevant history
 - **Security vulnerability** - one carefully crafted prompt could expose your entire project
 
-### Agent-MCP's Ephemeral Agents
+### MCP Agent Maestro's Ephemeral Agents
 Each agent is purpose-built for a single task:
 - **Minimal, focused context** - only what's needed for the specific task
 - **Crystal clear objectives** - one task, one goal, no ambiguity
@@ -603,7 +844,7 @@ try to piece this together from our 50+ message history...
 [Agent produces confused implementation mixing multiple patterns]
 ```
 
-**Agent-MCP Approach**: Same request, broken into focused tasks
+**MCP Agent Maestro Approach**: Same request, broken into focused tasks
 ```
 Agent 1 (Database): Create auth tables with exactly these fields...
 Agent 2 (API): Implement /auth endpoints following REST patterns...
@@ -628,7 +869,7 @@ Most AI development approaches suffer from a fundamental flaw: they try to maint
 
 ### Our Solution: Ephemeral Agents with Shared Memory
 
-Agent-MCP implements a radically different approach:
+MCP Agent Maestro implements a radically different approach:
 
 **Short-Lived, Focused Agents**  
 Each agent lives only as long as their specific task. They:
@@ -657,7 +898,7 @@ Traditional long-context agents are like giving someone your entire codebase, do
 
 ### The Cleanup Protocol: Keeping Your System Lean
 
-Agent-MCP enforces strict lifecycle management:
+MCP Agent Maestro enforces strict lifecycle management:
 
 **Maximum 10 Active Agents**
 - Hard limit prevents resource exhaustion
@@ -681,7 +922,7 @@ This isn't just housekeeping - it's fundamental to the security and performance 
 
 **Any task that cannot be expressed as `Step 1 → Step 2 → Step N` is not atomic enough.**
 
-This principle drives everything in Agent-MCP:
+This principle drives everything in MCP Agent Maestro:
 
 1. **Complex goals** must decompose into **linear sequences**
 2. **Linear sequences** can execute **in parallel** when independent
@@ -695,7 +936,7 @@ This principle drives everything in Agent-MCP:
 - Agents make different assumptions
 - Integration becomes a nightmare
 
-**Agent-MCP Approach**: 
+**MCP Agent Maestro Approach**: 
 ```
 Chain 1: Database Layer
   1.1: Create users table with id, email, password_hash
@@ -786,7 +1027,10 @@ Run memory garbage collection through the dashboard or restart with `--refresh-m
 
 ## Documentation
 
+- [Setup Guide](./docs/setup/README.md) - **Start here!** Complete installation and setup instructions
 - [Getting Started Guide](./docs/getting-started.md) - Complete walkthrough with examples
+- [Configuration Guide](./docs/setup/CONFIGURATION.md) - Configuration reference
+- [Troubleshooting Guide](./docs/setup/TROUBLESHOOTING.md) - Common issues and solutions
 - [MCD Creation Guide](./docs/mcd-guide.md) - Write effective project blueprints
 - [Theoretical Foundation](./docs/chapter-1-cognitive-empathy.md) - Understanding AI cognition
 - [Architecture Overview](./docs/architecture.md) - System design and components
@@ -795,9 +1039,9 @@ Run memory garbage collection through the dashboard or restart with `--refresh-m
 ## Community and Support
 
 **Get Help**
-- [Discord Community](https://discord.gg/7Jm7nrhjGn) - Active developer discussions
-- [GitHub Issues](https://github.com/rinadelph/Agent-MCP/issues) - Bug reports and features
-- [Discussions](https://github.com/rinadelph/Agent-MCP/discussions) - Share your experiences
+- [Discord Community](https://discord.gg/7Jm7nrhjGn) - Active developer discussions (original Agent-MCP community)
+- [GitHub Issues](https://github.com/jreakin/mcp-agent-maestro/issues) - Bug reports and features for this fork
+- [Original Project Issues](https://github.com/rinadelph/Agent-MCP/issues) - Issues for the original Agent-MCP project
 
 **Contributing**
 We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for:

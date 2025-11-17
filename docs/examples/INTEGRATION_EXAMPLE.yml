@@ -1,0 +1,100 @@
+# Example: Adding Agent-MCP to your existing docker-compose.yml
+# This shows how to integrate Agent-MCP into vep-phone-bank-app or any other project
+
+version: '3.8'
+
+services:
+  # Your existing services (Redis, app, etc.)
+  redis:
+    image: redis/redis-stack:latest
+    container_name: vep-redis
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    # ... rest of your redis config
+
+  app:
+    build: .
+    container_name: vep-phone-bank-app
+    ports:
+      - "8000:8000"
+    # ... rest of your app config
+    # Agent-MCP services are on the same network, so you can access them
+    networks:
+      - vep-network
+
+  # ============================================
+  # Agent-MCP Services (NEW - Completely Isolated)
+  # ============================================
+  
+  agent-mcp:
+    # Option 1: Build from local Agent-MCP directory
+    build:
+      context: ../Agent-MCP-fork  # Path to your Agent-MCP fork
+      dockerfile: Dockerfile
+    
+    # Option 2: Use a pre-built image (when you publish it)
+    # image: your-registry/agent-mcp:latest
+    
+    container_name: vep-agent-mcp
+    ports:
+      # Map host port 8080 to container port 8080
+      # Inside container: Agent-MCP runs on port 8080
+      # From host: Access via localhost:8080
+      - "8080:8080"
+    environment:
+      - PORT=8080  # Internal container port
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MCP_PROJECT_DIR=/app/project-data
+      # PostgreSQL config (points to agent-mcp-postgres below)
+      - DB_HOST=agent-mcp-postgres  # Docker service name
+      - DB_PORT=5432
+      - DB_NAME=agent_mcp
+      - DB_USER=agent_mcp
+      - DB_PASSWORD=${AGENT_MCP_DB_PASSWORD:-agent_mcp_secure_password}
+    volumes:
+      # Mount your project directory so Agent-MCP can access it
+      - ./:/app/project-data
+    depends_on:
+      agent-mcp-postgres:
+        condition: service_healthy
+    networks:
+      - vep-network
+    restart: unless-stopped
+
+  # Agent-MCP's PostgreSQL (ISOLATED from your Supabase)
+  agent-mcp-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: vep-agent-mcp-postgres
+    environment:
+      - POSTGRES_DB=agent_mcp
+      - POSTGRES_USER=agent_mcp
+      - POSTGRES_PASSWORD=${AGENT_MCP_DB_PASSWORD:-agent_mcp_secure_password}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      # Isolated volume - completely separate from Supabase
+      - agent-mcp-postgres-data:/var/lib/postgresql/data
+    # Optional: Expose port if you want to access it from host
+    # ports:
+    #   - "5433:5432"  # Use different port than Supabase (54322)
+    # Note: Agent-MCP PostgreSQL is isolated from your Supabase database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_mcp -d agent_mcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vep-network
+    restart: unless-stopped
+
+volumes:
+  # Your existing volumes
+  logs:
+  redis_data:
+  # Agent-MCP's isolated PostgreSQL volume
+  agent-mcp-postgres-data:
+    driver: local
+
+networks:
+  vep-network:
+    driver: bridge

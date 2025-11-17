@@ -1,0 +1,16 @@
+<<<<<<< HEAD:mcp.json
+{
+  "mcpServers": {
+    "Agent-MCP": {
+      "url": "http://localhost:3000/sse"
+    }
+  }
+=======
+{
+  "mcpServers": {
+    "Agent-MCP": {
+      "url": "http://localhost:3000/sse"
+    }
+  }
+>>>>>>> feature/port-3000-default:docs/examples/mcp.json
+}

@@ -1,6 +1,23 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+// No-op storage for SSR
+const noOpStorage: Storage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+  length: 0,
+  clear: () => {},
+  key: () => null,
+} as Storage
+
+// SSR-safe storage for zustand persist
+const getStorage = () => {
+  // Always use no-op during module initialization to prevent SSR errors
+  // Real storage will be set up on client side if needed
+  return noOpStorage
+}
+
 interface ThemeState {
   theme: 'light' | 'dark' | 'system'
   setTheme: (theme: 'light' | 'dark' | 'system') => void
@@ -8,39 +25,56 @@ interface ThemeState {
   toggleTheme: () => void
 }
 
-export const useTheme = create<ThemeState>()(
-  persist(
-    (set, get) => ({
-      theme: 'system',
-      isDark: false,
-      setTheme: (theme) => {
-        set({ theme })
-        
-        // Only run in browser environment
-        if (typeof window !== 'undefined') {
-          const isDark = theme === 'dark' || 
-            (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-          set({ isDark })
-          
-          // Update document class
-          if (isDark) {
-            document.documentElement.classList.add('dark')
-          } else {
-            document.documentElement.classList.remove('dark')
-          }
-        }
-      },
-      toggleTheme: () => {
-        const currentTheme = get().theme
-        const newTheme = currentTheme === 'light' ? 'dark' : 'light'
-        get().setTheme(newTheme)
+// Helper to get initial theme from localStorage (client-side only)
+const getInitialTheme = (): 'light' | 'dark' | 'system' => {
+  if (typeof window === 'undefined') return 'system'
+  try {
+    const stored = localStorage.getItem('theme-storage')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (parsed?.state?.theme) {
+        return parsed.state.theme
       }
-    }),
-    {
-      name: 'theme-storage',
     }
-  )
-)
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+  return 'system'
+}
+
+export const useTheme = create<ThemeState>()((set, get) => ({
+  theme: 'system', // Default, will be hydrated on client
+  isDark: false,
+  setTheme: (theme) => {
+    set({ theme })
+    
+    // Only run in browser environment
+    if (typeof window !== 'undefined') {
+      const isDark = theme === 'dark' || 
+        (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      set({ isDark })
+      
+      // Update document class
+      if (isDark) {
+        document.documentElement.classList.add('dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+      }
+
+      // Save to localStorage
+      try {
+        localStorage.setItem('theme-storage', JSON.stringify({ state: { theme } }))
+      } catch (e) {
+        // Ignore localStorage errors
+      }
+    }
+  },
+  toggleTheme: () => {
+    const currentTheme = get().theme
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light'
+    get().setTheme(newTheme)
+  }
+}))
 
 interface SidebarState {
   isCollapsed: boolean
@@ -55,8 +89,8 @@ export const useSidebar = create<SidebarState>()((set, get) => ({
 }))
 
 interface DashboardState {
-  currentView: 'overview' | 'agents' | 'tasks' | 'memories' | 'prompts' | 'system'
-  setCurrentView: (view: 'overview' | 'agents' | 'tasks' | 'memories' | 'prompts' | 'system') => void
+  currentView: 'overview' | 'agents' | 'tasks' | 'memories' | 'prompts' | 'mcp-setup' | 'system' | 'config'
+  setCurrentView: (view: 'overview' | 'agents' | 'tasks' | 'memories' | 'prompts' | 'mcp-setup' | 'system' | 'config') => void
   isLoading: boolean
   setLoading: (loading: boolean) => void
   lastUpdated: Date | null
@@ -65,7 +99,11 @@ interface DashboardState {
 
 export const useDashboard = create<DashboardState>()((set) => ({
   currentView: 'overview',
-  setCurrentView: (view) => set({ currentView: view }),
+  setCurrentView: (view) => {
+    console.log('Store setCurrentView called with:', view)
+    set({ currentView: view })
+    console.log('Store state after set:', useDashboard.getState().currentView)
+  },
   isLoading: false,
   setLoading: (loading) => set({ isLoading: loading }),
   lastUpdated: null,

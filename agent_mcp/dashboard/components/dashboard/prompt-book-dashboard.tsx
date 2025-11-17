@@ -315,6 +315,7 @@ export function PromptBookDashboard() {
 
   // Load custom prompts from localStorage on mount
   useEffect(() => {
+    if (typeof window === 'undefined') return
     const stored = localStorage.getItem('custom-prompts')
     if (stored) {
       try {
@@ -327,6 +328,7 @@ export function PromptBookDashboard() {
 
   // Save custom prompts to localStorage when they change
   useEffect(() => {
+    if (typeof window === 'undefined') return
     localStorage.setItem('custom-prompts', JSON.stringify(customPrompts))
   }, [customPrompts])
 
@@ -402,7 +404,7 @@ export function PromptBookDashboard() {
             Prompt Book
           </h1>
           <p className="text-muted-foreground text-fluid-base mt-1">
-            Standardized prompts and workflows for Agent-MCP
+            Standardized prompts and workflows for MCP Maestro
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -471,7 +473,7 @@ export function PromptBookDashboard() {
             Quick Start
           </CardTitle>
           <CardDescription>
-            Essential prompts to get started with Agent-MCP
+            Essential prompts to get started with MCP Maestro
           </CardDescription>
         </CardHeader>
         <CardContent>

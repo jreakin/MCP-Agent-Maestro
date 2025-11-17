@@ -1,8 +1,8 @@
-# Agent-MCP/mcp_template/mcp_server_src/app/server_lifecycle.py
+# MCP Agent Maestro - Server lifecycle management
 import os
 import json
 import datetime
-import sqlite3
+import psycopg2
 import anyio  # For managing background tasks
 from pathlib import Path
 from typing import Optional
@@ -13,14 +13,129 @@ from ..core.config import logger, get_project_dir
 from ..core import globals as g
 from ..core.auth import generate_token  # For admin token generation
 from ..utils.project_utils import init_agent_directory
-from ..db.schema import init_database as initialize_database_schema
-from ..db.connection import get_db_connection, check_vss_loadability
+from ..db.postgres_schema import init_database as initialize_database_schema
+from ..db import get_db_connection, is_vss_loadable, check_vss_loadability
+from ..db.postgres_connection import return_connection
 from ..external.openai_service import initialize_openai_client
 from ..features.rag.indexing import run_rag_indexing_periodically
 
 from ..features.claude_session_monitor import run_claude_session_monitoring
 from ..utils.signal_utils import register_signal_handlers  # For graceful shutdown
 from ..db.write_queue import get_write_queue
+from ..core.config import SECURITY_ENABLED, SECURITY_ALERT_WEBHOOK
+
+
+def ensure_env_file(project_dir: Optional[Path] = None) -> Path:
+    """
+    Ensure .env file exists, creating it with defaults if it doesn't.
+    
+    Args:
+        project_dir: Optional project directory. If None, searches for .env in current and parent directories.
+    
+    Returns:
+        Path to the .env file (created or existing).
+    """
+    # Determine where to look for/create .env file
+    if project_dir:
+        env_path = project_dir / ".env"
+    else:
+        # Search for .env in current directory and up to 3 parent directories
+        current = Path.cwd()
+        for level in range(4):
+            candidate = current / (".." * level) / ".env"
+            candidate = candidate.resolve()
+            if candidate.exists():
+                return candidate
+        # If not found, create in current directory
+        env_path = Path.cwd() / ".env"
+    
+    # Create .env file if it doesn't exist
+    if not env_path.exists():
+        # Use basic print since logger may not be initialized yet
+        print(f"Creating default .env file at: {env_path}")
+        
+        # Default .env content with sensible defaults
+        default_env_content = """# MCP Agent Maestro Configuration
+# This file was automatically generated. Edit as needed.
+
+# API & Server Configuration
+AGENT_MCP_API_HOST=localhost
+AGENT_MCP_API_PORT=8080
+AGENT_MCP_DASHBOARD_PORT=3000
+
+# Database Configuration
+# For Docker: use 'postgres' as host, for local: use 'localhost'
+AGENT_MCP_DB_HOST=localhost
+AGENT_MCP_DB_PORT=5432
+AGENT_MCP_DB_NAME=agent_mcp
+AGENT_MCP_DB_USER=agent_mcp
+AGENT_MCP_DB_PASSWORD=
+AGENT_MCP_DB_POOL_MIN=1
+AGENT_MCP_DB_POOL_MAX=10
+
+# OpenAI Configuration (optional - leave empty if using Ollama)
+# AGENT_MCP_OPENAI_API_KEY=sk-your-api-key-here
+AGENT_MCP_OPENAI_MODEL=gpt-4.1-2025-04-14
+AGENT_MCP_EMBEDDING_MODEL=text-embedding-3-large
+AGENT_MCP_EMBEDDING_DIMENSION=1536
+
+# Embedding Provider (openai or ollama)
+# Set to 'ollama' to use local Ollama models instead of OpenAI
+EMBEDDING_PROVIDER=openai
+
+# Ollama Configuration (if using EMBEDDING_PROVIDER=ollama)
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+# OLLAMA_CHAT_MODEL=llama3.2
+
+# Security Configuration
+AGENT_MCP_SECURITY_ENABLED=true
+AGENT_MCP_SECURITY_POISON_DETECTION_ENABLED=true
+AGENT_MCP_SECURITY_SCAN_TOOL_SCHEMAS=true
+AGENT_MCP_SECURITY_SCAN_TOOL_RESPONSES=true
+AGENT_MCP_SECURITY_SANITIZATION_MODE=remove
+
+# RAG Configuration
+AGENT_MCP_RAG_ENABLED=true
+AGENT_MCP_RAG_MAX_RESULTS=13
+AGENT_MCP_DISABLE_AUTO_INDEXING=false
+
+# Logging Configuration
+AGENT_MCP_LOG_LEVEL=INFO
+AGENT_MCP_MCP_DEBUG=false
+AGENT_MCP_LOG_FILE=mcp_server.log
+
+# Agent Management
+AGENT_MCP_MAX_WORKERS=5
+AGENT_MCP_AGENT_TIMEOUT=3600
+
+# Task Analysis
+AGENT_MCP_TASK_ANALYSIS_MODEL=gpt-4.1-2025-04-14
+AGENT_MCP_TASK_ANALYSIS_MAX_TOKENS=1000000
+
+# Task Placement
+AGENT_MCP_ENABLE_TASK_PLACEMENT_RAG=true
+AGENT_MCP_TASK_DUPLICATION_THRESHOLD=0.8
+AGENT_MCP_ALLOW_RAG_OVERRIDE=true
+AGENT_MCP_TASK_PLACEMENT_RAG_TIMEOUT=5
+"""
+        
+        try:
+            # Ensure parent directory exists
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write default .env file
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write(default_env_content)
+            
+            print(f"Created default .env file at: {env_path}")
+        except Exception as e:
+            print(f"Warning: Failed to create .env file at {env_path}: {e}. Continuing with environment variables only.")
+    else:
+        # Use basic print since logger may not be initialized yet
+        print(f"Using existing .env file at: {env_path}")
+    
+    return env_path
 
 
 # This function encapsulates the logic originally in main() before server run.
@@ -29,8 +144,9 @@ async def application_startup(
 ):
     """
     Handles all application startup procedures:
+    - Ensures .env file exists (creates with defaults if missing).
     - Sets project directory environment variable.
-    - Initializes .agent directory.
+    - Initializes .mcp-maestro directory.
     - Initializes database schema.
     - Handles admin token persistence (load or generate).
     - Loads existing state (agents, tasks) from DB.
@@ -38,14 +154,17 @@ async def application_startup(
     - Performs VSS loadability check.
     - Registers signal handlers.
     """
+    # 1. Handle Project Directory (Original main.py:1950-1959)
+    project_path = Path(project_dir_path_str).resolve()
+    
+    # Ensure .env file exists before loading
+    env_file = ensure_env_file(project_path)
+    
     # Load environment variables from .env file
-    load_dotenv()
+    load_dotenv(dotenv_path=str(env_file))
 
     logger.info("MCP Server application starting up...")
     g.server_start_time = datetime.datetime.now().isoformat()  # For uptime calculation
-
-    # 1. Handle Project Directory (Original main.py:1950-1959)
-    project_path = Path(project_dir_path_str).resolve()
     if not project_path.exists():
         logger.info(f"Project directory '{project_path}' does not exist. Creating it.")
         try:
@@ -66,16 +185,16 @@ async def application_startup(
     )  # Critical for other modules using get_project_dir()
     logger.info(f"Using project directory: {project_path}")
 
-    # 2. Initialize .agent directory (Original main.py:1962-1966)
+    # 2. Initialize .mcp-maestro directory (Original main.py:1962-1966)
     agent_dir = init_agent_directory(
         str(project_path)
     )  # project_utils.init_agent_directory
     if agent_dir is None:  # init_agent_directory returns None on critical failure
         logger.error(
-            "CRITICAL: Failed to initialize .agent directory structure. Exiting."
+            "CRITICAL: Failed to initialize .mcp-maestro directory structure. Exiting."
         )
-        raise SystemExit("Failed to initialize .agent directory.")
-    logger.info(f".agent directory initialized at {agent_dir}")
+        raise SystemExit("Failed to initialize .mcp-maestro directory.")
+    logger.info(f".mcp-maestro directory initialized at {agent_dir}")
 
     # 3. Initialize Database Schema (Original main.py:1969-1974)
     try:
@@ -84,12 +203,12 @@ async def application_startup(
         logger.error(
             f"CRITICAL: Failed to initialize database: {e}. Exiting.", exc_info=True
         )
-        # DB_FILE_NAME is in core.config, get_db_path uses it.
-        from ..core.config import get_db_path as get_db_path_for_error
-
-        db_path_err = get_db_path_for_error()  # Get path for error message
+        # Get database connection info for error message
+        db_host = os.environ.get("DB_HOST", "localhost")
+        db_port = os.environ.get("DB_PORT", "5432")
+        db_name = os.environ.get("DB_NAME", "agent_mcp")
         raise SystemExit(
-            f"Error: Failed to initialize database at {db_path_err}. Check logs and permissions."
+            f"Error: Failed to initialize PostgreSQL database at {db_host}:{db_port}/{db_name}. Check logs, connection settings, and permissions."
         ) from e
 
     # 4. Handle Admin Token Persistence (Original main.py:1977-2012)
@@ -107,13 +226,20 @@ async def application_startup(
             token_source_description = "command-line parameter"
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO project_context (context_key, value, last_updated, updated_by, description)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO project_context (context_key, value, last_updated, updated_by, description)
+                VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s)
+                ON CONFLICT (context_key) DO UPDATE SET
+                    value = %s,
+                    last_updated = CURRENT_TIMESTAMP,
+                    updated_by = %s,
+                    description = %s
             """,
                 (
                     admin_token_key_in_db,
                     json.dumps(effective_admin_token),
-                    datetime.datetime.now().isoformat(),
+                    "server_startup",
+                    "Persistent MCP Admin Token",
+                    json.dumps(effective_admin_token),
                     "server_startup",
                     "Persistent MCP Admin Token",
                 ),
@@ -122,7 +248,7 @@ async def application_startup(
             logger.info(f"Using admin token provided via {token_source_description}.")
         else:
             cursor.execute(
-                "SELECT value FROM project_context WHERE context_key = ?",
+                "SELECT value FROM project_context WHERE context_key = %s",
                 (admin_token_key_in_db,),
             )
             row = cursor.fetchone()
@@ -149,13 +275,20 @@ async def application_startup(
                 token_source_description = "newly generated"
                 cursor.execute(
                     """
-                    INSERT OR REPLACE INTO project_context (context_key, value, last_updated, updated_by, description)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO project_context (context_key, value, last_updated, updated_by, description)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s)
+                    ON CONFLICT (context_key) DO UPDATE SET
+                        value = %s,
+                        last_updated = CURRENT_TIMESTAMP,
+                        updated_by = %s,
+                        description = %s
                 """,
                     (
                         admin_token_key_in_db,
                         json.dumps(effective_admin_token),
-                        datetime.datetime.now().isoformat(),
+                        "server_startup",
+                        "Persistent MCP Admin Token",
+                        json.dumps(effective_admin_token),
                         "server_startup",
                         "Persistent MCP Admin Token",
                     ),
@@ -166,7 +299,7 @@ async def application_startup(
         g.admin_token = effective_admin_token  # Set the global admin token
         logger.info(f"MCP Admin Token ({token_source_description}): {g.admin_token}")
 
-    except sqlite3.Error as e_sql_admin:
+    except psycopg2.Error as e_sql_admin:
         logger.error(
             f"Database error during admin token persistence: {e_sql_admin}. Falling back to temporary token.",
             exc_info=True,
@@ -184,7 +317,7 @@ async def application_startup(
         )
     finally:
         if conn_admin_token:
-            conn_admin_token.close()
+            return_connection(conn_admin_token)
 
     if not g.admin_token:  # Should not happen if logic above is correct
         logger.error("CRITICAL: Admin token could not be set. Exiting.")
@@ -202,7 +335,7 @@ async def application_startup(
         cursor.execute(
             """
             SELECT token, agent_id, capabilities, created_at, status, current_task, working_directory, color 
-            FROM agents WHERE status != ?
+            FROM agents WHERE status != %s
         """,
             ("terminated",),
         )
@@ -247,7 +380,7 @@ async def application_startup(
             "In-memory file map and audit log initialized as empty for this session."
         )
 
-    except sqlite3.Error as e_sql_load:
+    except psycopg2.Error as e_sql_load:
         logger.error(
             f"Database error during state loading: {e_sql_load}. Server might operate with incomplete state.",
             exc_info=True,
@@ -263,7 +396,7 @@ async def application_startup(
         raise SystemExit(f"Unexpected error loading state: {e_load}") from e_load
     finally:
         if conn_load_state:
-            conn_load_state.close()
+            return_connection(conn_load_state)
     logger.info("State loading from database complete.")
 
     # 6. Initialize OpenAI Client (Original main.py: part of get_openai_client, called by RAG indexer)
@@ -276,20 +409,32 @@ async def application_startup(
         )
         # Server can continue, but RAG won't work.
 
-    # 6.5. Initialize Database Write Queue
-    # This prevents SQLite lock contention during concurrent write operations
+    # 6.5. Initialize Security Monitor (if security is enabled)
+    if SECURITY_ENABLED:
+        from ..security import SecurityMonitor
+        g.security_monitor = SecurityMonitor()
+        if SECURITY_ALERT_WEBHOOK:
+            g.security_monitor.set_alert_webhook(SECURITY_ALERT_WEBHOOK)
+            logger.info(f"Security monitoring enabled with webhook: {SECURITY_ALERT_WEBHOOK}")
+        else:
+            logger.info("Security monitoring enabled (no webhook configured)")
+    else:
+        logger.info("Security monitoring disabled")
+
+    # 6.6. Initialize Database Write Queue
+    # This manages database write operations (PostgreSQL handles concurrency well, but queue provides ordering)
     write_queue = get_write_queue()
     await write_queue.start()
     logger.info("Database write queue initialized and started.")
 
-    # 7. Perform VSS Loadability Check (Original main.py: called by init_database)
+    # 7. Perform Vector Extension Check (PostgreSQL pgvector)
     # This ensures g.global_vss_load_successful is set.
-    check_vss_loadability()  # db.connection.check_vss_loadability
+    check_vss_loadability()  # db.check_vss_loadability
     if g.global_vss_load_successful:
-        logger.info("sqlite-vec (VSS) extension confirmed loadable.")
+        logger.info("pgvector extension confirmed available.")
     else:
         logger.warning(
-            "sqlite-vec (VSS) extension is NOT loadable. RAG search functionality will be impaired."
+            "pgvector extension is NOT available. RAG search functionality will be impaired."
         )
 
     # 8. Register Signal Handlers (Original main.py: 839-840, called before server run)
@@ -342,7 +487,7 @@ async def application_shutdown():
     logger.info("Database write queue stopped.")
 
     # Add any other cleanup (e.g., closing persistent connections if not managed by context)
-    # For SQLite, connections are typically short-lived per request/operation.
+    # For PostgreSQL, connections are managed by the connection pool.
 
     logger.info("MCP Server application shutdown sequence complete.")
 

@@ -104,7 +104,7 @@ class TUIDisplay:
             current_row += 1
         
         # Add credits and version info
-        credits_text = f"Created by {AUTHOR} ({GITHUB_URL})"
+        credits_text = f"Fork of https://github.com/rinadelph/Agent-MCP | MCP Agent Maestro by John R. Eakin (github.com/jreakin)"
         version_text = f"Version {VERSION}"
         
         # Center the credits

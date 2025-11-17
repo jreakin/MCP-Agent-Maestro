@@ -6,7 +6,8 @@ import {
   Users, 
   CheckSquare,
   Brain,
-  BookOpen
+  BookOpen,
+  Settings
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -16,7 +17,7 @@ import { useDashboard, useSidebar } from "@/lib/store"
 interface NavItem {
   title: string
   icon: React.ComponentType<{ className?: string }>
-  view: 'overview' | 'agents' | 'tasks' | 'memories' | 'prompts'
+  view: 'overview' | 'agents' | 'tasks' | 'memories' | 'prompts' | 'mcp-setup' | 'config' | 'system'
   description?: string
   badge?: string
 }
@@ -51,12 +52,26 @@ const navigationItems: NavItem[] = [
     icon: BookOpen,
     view: "prompts",
     description: "Standardized prompts and workflows"
+  },
+  {
+    title: "MCP Setup",
+    icon: Settings,
+    view: "mcp-setup",
+    description: "Configure MCP client connections"
+  },
+  {
+    title: "Configuration",
+    icon: Settings,
+    view: "config",
+    description: "Manage API keys and environment variables"
   }
 ]
 
 
 export function Navigation() {
-  const { currentView, setCurrentView } = useDashboard()
+  // Use selectors to ensure proper subscription
+  const currentView = useDashboard((state) => state.currentView)
+  const setCurrentView = useDashboard((state) => state.setCurrentView)
   const { isCollapsed } = useSidebar()
 
   const NavButton = ({ item, isActive = false }: { item: NavItem, isActive?: boolean }) => {
@@ -68,7 +83,22 @@ export function Navigation() {
           isCollapsed && "justify-center px-2",
           isActive && "bg-secondary text-secondary-foreground font-medium"
         )}
-        onClick={() => setCurrentView(item.view)}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          console.log('Navigation clicked:', item.view, 'Current view before:', currentView)
+          const newView = item.view
+          setCurrentView(newView)
+          console.log('setCurrentView called with:', newView)
+          // Force a check after state update
+          setTimeout(() => {
+            const store = useDashboard.getState()
+            console.log('Store state after update:', store.currentView)
+            if (store.currentView !== newView) {
+              console.error('Store update failed! Expected:', newView, 'Got:', store.currentView)
+            }
+          }, 100)
+        }}
       >
         <item.icon className={cn("h-5 w-5", isActive && "text-primary")} />
         {!isCollapsed && (

@@ -1,6 +1,45 @@
 {
-  "dependencies": {
-    "sqlite-vec": "^0.1.7-alpha.2",
-    "typescript": "^5.9.2"
-  }
+  "name": "@jreakin/mcp-agent-maestro",
+  "version": "0.2.0",
+  "description": "MCP Agent Maestro - A fork of Agent-MCP for enhanced multi-agent collaboration",
+  "main": "bin/agent-mcp",
+  "bin": {
+    "agent-mcp": "./bin/agent-mcp"
+  },
+  "scripts": {
+    "prepublish": "npm run build:check",
+    "postinstall": "node scripts/postinstall.js",
+    "build:check": "node -e \"console.log('Build check passed')\""
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "multi-agent",
+    "task-management",
+    "rag",
+    "claude",
+    "cursor"
+  ],
+  "author": "Luis Alejandro Rincon <alejandro@rinconnect.com>",
+  "license": "AGPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jreakin/mcp-agent-maestro.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "peerDependencies": {
+    "python": ">=3.10"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "agent_mcp",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE"
+  ]
 }

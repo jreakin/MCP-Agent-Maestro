@@ -77,6 +77,9 @@ async def list_available_tools() -> List[mcp_types.Tool]:
     This replaces the logic from `@app.list_tools()` in main.py (lines 1636-1858).
     It now reads from the `tool_schemas` list populated by `register_tool`.
     """
+    from ..core.config import SECURITY_ENABLED, SECURITY_SCAN_TOOL_SCHEMAS
+    from ..security import PoisonDetector
+    
     # Convert the stored schema dictionaries to mcp_types.Tool objects
     # The original code directly returned a list of mcp_types.Tool.
     # We need to ensure the structure matches.
@@ -87,8 +90,21 @@ async def list_available_tools() -> List[mcp_types.Tool]:
     # with 'name', 'description', and 'inputSchema'.
     
     mcp_tool_list: List[mcp_types.Tool] = []
+    detector = PoisonDetector() if (SECURITY_ENABLED and SECURITY_SCAN_TOOL_SCHEMAS) else None
+    
     for schema_dict in tool_schemas:
         try:
+            # Security scan if enabled
+            if detector:
+                scan_result = await detector.scan_tool_schema(schema_dict)
+                if not scan_result.safe:
+                    logger.warning(
+                        f"Tool '{schema_dict.get('name')}' failed security scan: "
+                        f"{[t.type for t in scan_result.threats]}"
+                    )
+                    # Optionally skip unsafe tools or sanitize them
+                    # For now, we'll log and continue
+            
             # Assuming mcp_types.Tool can be initialized like this:
             # Tool(name="...", description="...", inputSchema={...})
             # If it requires specific keyword arguments, adjust accordingly.
@@ -175,42 +191,120 @@ async def dispatch_tool_call(
     if tool_name in tool_implementations:
         implementation_func = tool_implementations[tool_name]
         try:
-            # The core logic of each tool (e.g., create_agent_tool_impl)
-            # will now handle its own argument extraction (e.g., .get("token"))
-            # and authentication/authorization if necessary.
-            # This dispatch_tool_call function focuses on routing.
-            # We pass the sanitized_arguments dictionary directly.
-            # The original handle_tool had specific .get calls for each tool.
-            # This will now be the responsibility of the individual tool_impl functions.
-            # For example, create_agent_tool_impl(arguments: Dict) -> ...
-            # inside create_agent_tool_impl: token = arguments.get("token"), agent_id = arguments.get("agent_id")
+            # Security: Scan and monitor tool execution if enabled
+            from ..core.config import SECURITY_ENABLED, SECURITY_SCAN_TOOL_RESPONSES
+            from ..security import PoisonDetector, ResponseSanitizer, SecurityMonitor
+            from ..core import globals as g
             
-            # This is a key design decision:
-            # Option A: Dispatcher unpacks args: `return await func(sanitized_args.get("token"), ...)` (like original)
-            # Option B: Dispatcher passes dict: `return await func(sanitized_arguments)` (current choice)
-            # Option B is more flexible if tool signatures vary widely or use **kwargs.
-            # It makes individual tool functions responsible for their arg parsing.
+            detector = None
+            sanitizer = None
+            monitor = None
             
-            # For closer 1-to-1 with original's direct arg passing, we'd need a huge if/elif here.
-            # Let's stick to Option B for better modularity, assuming tool_impl functions
-            # are adapted to take a single dictionary of arguments.
-            # If a strict 1-to-1 call signature is needed for each specific tool as in the original main.py,
-            # then the `tool_implementations` would need to store lambdas or wrappers.
-            # e.g. `lambda args: create_agent_tool_impl(args.get("token"), args.get("agent_id"), ...)`
-            # This becomes cumbersome.
-            # The most straightforward refactor is that tool_impl functions now take `(arguments: Dict[str, Any])`.
+            if SECURITY_ENABLED:
+                if SECURITY_SCAN_TOOL_RESPONSES:
+                    detector = PoisonDetector()
+                    from ..core.config import SECURITY_SANITIZATION_MODE
+                    sanitizer = ResponseSanitizer(mode=SECURITY_SANITIZATION_MODE)
+                
+                # Initialize monitor if not already done
+                if not hasattr(g, 'security_monitor'):
+                    g.security_monitor = SecurityMonitor()
+                    from ..core.config import SECURITY_ALERT_WEBHOOK
+                    if SECURITY_ALERT_WEBHOOK:
+                        g.security_monitor.set_alert_webhook(SECURITY_ALERT_WEBHOOK)
+                monitor = g.security_monitor
+            
+            # Security: Scan tool arguments before execution
+            if detector:
+                # Scan arguments for injection attempts
+                arguments_str = str(sanitized_arguments)
+                arg_scan_result = await detector.scan_text(
+                    arguments_str,
+                    context=f"tool.{tool_name}.arguments"
+                )
+                if not arg_scan_result.safe:
+                    logger.warning(
+                        f"Tool arguments for '{tool_name}' contained threats: "
+                        f"{[t.type for t in arg_scan_result.threats]}"
+                    )
+                    # Log security alert
+                    if monitor:
+                        from ..security.models import SecurityAlert
+                        alert = SecurityAlert(
+                            severity='HIGH',
+                            message=f"Security threat detected in tool arguments for '{tool_name}'",
+                            details={
+                                'tool_name': tool_name,
+                                'threats': [t.type for t in arg_scan_result.threats],
+                                'threat_count': len(arg_scan_result.threats)
+                            },
+                            tool_name=tool_name
+                        )
+                        await monitor.alert_queue.put(alert)
+                    
+                    # Block execution if critical threat detected
+                    critical_threats = [t for t in arg_scan_result.threats if t.severity in ['HIGH', 'CRITICAL']]
+                    if critical_threats:
+                        logger.error(
+                            f"Blocking tool execution '{tool_name}' due to critical security threat in arguments"
+                        )
+                        return [mcp_types.TextContent(
+                            type="text",
+                            text=f"Security Error: Tool execution blocked due to detected security threat in arguments."
+                        )]
+            
+            # Execute tool
+            result = await implementation_func(sanitized_arguments)
+            
+            # Security: Scan response and track usage
+            if monitor:
+                # Extract agent_id from arguments if available
+                agent_id = sanitized_arguments.get('agent_id') or sanitized_arguments.get('token', 'unknown')
+                # Convert result to string for monitoring
+                response_str = ' '.join([item.text for item in result if hasattr(item, 'text')])
+                await monitor.track_tool_call(
+                    agent_id=str(agent_id),
+                    tool_name=tool_name,
+                    tool_params=sanitized_arguments,
+                    response=response_str
+                )
+            
+            if detector and sanitizer:
+                # Scan each text content item
+                sanitized_result = []
+                for item in result:
+                    if hasattr(item, 'text'):
+                        scan_result = await detector.scan_tool_response(item.text)
+                        if not scan_result.safe:
+                            logger.warning(
+                                f"Tool response from '{tool_name}' contained threats: "
+                                f"{[t.type for t in scan_result.threats]}"
+                            )
+                            
+                            # Log security alert for response threats
+                            if monitor:
+                                from ..security.models import SecurityAlert
+                                alert = SecurityAlert(
+                                    severity='HIGH',
+                                    message=f"Security threat detected in tool response for '{tool_name}'",
+                                    details={
+                                        'tool_name': tool_name,
+                                        'threats': [t.type for t in scan_result.threats],
+                                        'threat_count': len(scan_result.threats)
+                                    },
+                                    tool_name=tool_name
+                                )
+                                await monitor.alert_queue.put(alert)
+                            
+                            sanitized_text = sanitizer.sanitize(item.text, scan_result)
+                            sanitized_result.append(mcp_types.TextContent(type="text", text=sanitized_text))
+                        else:
+                            sanitized_result.append(item)
+                    else:
+                        sanitized_result.append(item)
+                return sanitized_result
 
-            # The original `handle_tool` in main.py (lines 1880-1931) had a large if/elif block.
-            # This is now replaced by the `tool_implementations` dictionary lookup.
-            # Each specific tool's logic (argument extraction, calling the core function)
-            # will be in its own `*_tool.py` file, which registers its implementation.
-            # The implementation function itself will handle argument extraction.
-            
-            # Example: if tool_name == "create_agent":
-            #   return await create_agent_tool_impl(sanitized_arguments)
-            # This is handled by the dict lookup now.
-
-            return await implementation_func(sanitized_arguments)
+            return result
 
         except Exception as e:
             logger.error(f"Error executing tool '{tool_name}': {e}", exc_info=True)

@@ -1,17 +1,17 @@
 # Agent-MCP/mcp_template/mcp_server_src/tools/project_context_tools.py
 import json
 import datetime
-import sqlite3
+import psycopg2
 from typing import List, Dict, Any, Optional
 
 import mcp.types as mcp_types
 
 from .registry import register_tool
-from ..core.config import logger
+from ..core.config import logger, get_agent_dir
 from ..core import globals as g  # Not directly used here, but auth uses it
 from ..core.auth import get_agent_id, verify_token
 from ..utils.audit_utils import log_audit
-from ..db.connection import get_db_connection, execute_db_write
+from ..db import get_db_connection, execute_db_write, return_connection
 from ..db.actions.agent_actions_db import log_agent_action_to_db
 
 
@@ -199,12 +199,12 @@ async def view_project_context_tool_impl(
         query_params = []
 
         if context_key_filter:
-            where_conditions.append("context_key = ?")
+            where_conditions.append("context_key = %s")
             query_params.append(context_key_filter)
         elif search_query_filter:
             like_pattern = f"%{search_query_filter}%"
             where_conditions.append(
-                "(context_key LIKE ? OR description LIKE ? OR value LIKE ?)"
+                "(context_key LIKE %s OR description LIKE %s OR value LIKE %s)"
             )
             query_params.extend([like_pattern, like_pattern, like_pattern])
 
@@ -213,7 +213,7 @@ async def view_project_context_tool_impl(
             thirty_days_ago = (
                 datetime.datetime.now() - datetime.timedelta(days=30)
             ).isoformat()
-            where_conditions.append("last_updated < ?")
+            where_conditions.append("last_updated < %s")
             query_params.append(thirty_days_ago)
 
         # Build query with smart sorting
@@ -397,7 +397,7 @@ async def view_project_context_tool_impl(
 
             response_message = "\n".join(response_parts)
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         logger.error(
             f"Database error viewing project context: {e_sql}", exc_info=True
         )  # main.py:1462
@@ -415,7 +415,7 @@ async def view_project_context_tool_impl(
         response_message = f"An unexpected error occurred: {e}"
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
     return [mcp_types.TextContent(type="text", text=response_message)]
 
@@ -463,16 +463,23 @@ async def _handle_single_context_update(
             cursor = conn.cursor()
             updated_at_iso = datetime.datetime.now().isoformat()
 
-            # Use INSERT OR REPLACE (UPSERT)
+            # Use INSERT ... ON CONFLICT (UPSERT)
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO project_context (context_key, value, last_updated, updated_by, description)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO project_context (context_key, value, last_updated, updated_by, description)
+                VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s)
+                ON CONFLICT (context_key) DO UPDATE SET
+                    value = %s,
+                    last_updated = CURRENT_TIMESTAMP,
+                    updated_by = %s,
+                    description = %s
             """,
                 (
                     context_key_to_update,
                     value_json_str,
-                    updated_at_iso,
+                    requesting_agent_id,
+                    description_for_context,
+                    value_json_str,
                     requesting_agent_id,
                     description_for_context,
                 ),
@@ -492,7 +499,7 @@ async def _handle_single_context_update(
             )
             return "success"
 
-        except sqlite3.Error as e_sql:
+        except psycopg2.Error as e_sql:
             if conn:
                 conn.rollback()
             logger.error(
@@ -510,7 +517,7 @@ async def _handle_single_context_update(
             raise e
         finally:
             if conn:
-                conn.close()
+                return_connection(conn)
 
     # Execute the write operation through the queue
     try:
@@ -521,7 +528,7 @@ async def _handle_single_context_update(
                 text=f"Project context updated successfully for key '{context_key_to_update}'.",
             )
         ]
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         return [
             mcp_types.TextContent(
                 type="text", text=f"Database error updating project context: {e_sql}"
@@ -572,13 +579,20 @@ async def _handle_bulk_context_update(
                     # Execute update
                     cursor.execute(
                         """
-                        INSERT OR REPLACE INTO project_context (context_key, value, last_updated, updated_by, description)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO project_context (context_key, value, last_updated, updated_by, description)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s)
+                        ON CONFLICT (context_key) DO UPDATE SET
+                            value = %s,
+                            last_updated = CURRENT_TIMESTAMP,
+                            updated_by = %s,
+                            description = %s
                     """,
                         (
                             context_key,
                             value_json_str,
-                            updated_at_iso,
+                            requesting_agent_id,
+                            description,
+                            value_json_str,
                             requesting_agent_id,
                             description,
                         ),
@@ -626,7 +640,7 @@ async def _handle_bulk_context_update(
             )
             return response_parts
 
-        except sqlite3.Error as e_sql:
+        except psycopg2.Error as e_sql:
             if conn:
                 conn.rollback()
             logger.error(
@@ -640,13 +654,13 @@ async def _handle_bulk_context_update(
             raise e
         finally:
             if conn:
-                conn.close()
+                return_connection(conn)
 
     # Execute the write operation through the queue
     try:
         response_parts = await execute_db_write(write_operation)
         return [mcp_types.TextContent(type="text", text="\n".join(response_parts))]
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         return [
             mcp_types.TextContent(
                 type="text", text=f"Database error in bulk update: {e_sql}"
@@ -780,13 +794,20 @@ async def bulk_update_project_context_tool_impl(
                 # Execute update
                 cursor.execute(
                     """
-                    INSERT OR REPLACE INTO project_context (context_key, value, last_updated, updated_by, description)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO project_context (context_key, value, last_updated, updated_by, description)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s)
+                    ON CONFLICT (context_key) DO UPDATE SET
+                        value = %s,
+                        last_updated = CURRENT_TIMESTAMP,
+                        updated_by = %s,
+                        description = %s
                 """,
                     (
                         context_key,
                         value_json_str,
-                        updated_at_iso,
+                        requesting_agent_id,
+                        description,
+                        value_json_str,
                         requesting_agent_id,
                         description,
                     ),
@@ -834,7 +855,7 @@ async def bulk_update_project_context_tool_impl(
         )
         return [mcp_types.TextContent(type="text", text="\n".join(response_parts))]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(f"Database error in bulk context update: {e_sql}", exc_info=True)
@@ -854,7 +875,7 @@ async def bulk_update_project_context_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- backup_project_context tool ---
@@ -905,9 +926,8 @@ async def backup_project_context_tool_impl(
         # Save backup to a file in the project directory (optional - could be database too)
         import os
 
-        project_dir = os.environ.get("MCP_PROJECT_DIR", ".")
-        backup_dir = os.path.join(project_dir, ".agent", "backups", "context")
-        os.makedirs(backup_dir, exist_ok=True)
+        backup_dir = get_agent_dir() / "backups" / "context"
+        backup_dir.mkdir(parents=True, exist_ok=True)
 
         backup_filename = f"{backup_data['backup_name']}.json"
         backup_path = os.path.join(backup_dir, backup_filename)
@@ -970,7 +990,7 @@ async def backup_project_context_tool_impl(
         return [mcp_types.TextContent(type="text", text=f"Error creating backup: {e}")]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- validate_context_consistency tool ---
@@ -1101,7 +1121,7 @@ async def validate_context_consistency_tool_impl(
 
         return [mcp_types.TextContent(type="text", text="\n".join(response_parts))]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         logger.error(
             f"Database error validating context consistency: {e_sql}", exc_info=True
         )
@@ -1121,7 +1141,7 @@ async def validate_context_consistency_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- Register project context tools ---
@@ -1398,7 +1418,7 @@ async def delete_project_context_tool_impl(
         existing_keys = []
         for key in keys_to_delete:
             cursor.execute(
-                "SELECT context_key FROM project_context WHERE context_key = ?", (key,)
+                "SELECT context_key FROM project_context WHERE context_key = %s", (key,)
             )
             if cursor.fetchone():
                 existing_keys.append(key)
@@ -1418,14 +1438,14 @@ async def delete_project_context_tool_impl(
         for key in existing_keys:
             # Get current value for logging
             cursor.execute(
-                "SELECT value, description FROM project_context WHERE context_key = ?",
+                "SELECT value, description FROM project_context WHERE context_key = %s",
                 (key,),
             )
             row = cursor.fetchone()
 
             if row:
                 cursor.execute(
-                    "DELETE FROM project_context WHERE context_key = ?", (key,)
+                    "DELETE FROM project_context WHERE context_key = %s", (key,)
                 )
                 if cursor.rowcount > 0:
                     deleted_count += 1
@@ -1492,7 +1512,7 @@ async def delete_project_context_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # Call registration when this module is imported

@@ -1,12 +1,12 @@
 # Agent-MCP/mcp_template/mcp_server_src/features/dashboard/api.py
-import sqlite3
+import psycopg2
 import json
 from pathlib import Path # For Path().name in file map processing
 from typing import List, Dict, Any, Callable, Set, Tuple # Added Set, Tuple
 
 # Import from our project structure
 from ...core.config import logger # Central logger
-from ...db.connection import get_db_connection # To get DB connections
+from ...db import get_db_connection, return_connection # To get DB connections and return them
 from .styles import get_node_style # Import the styling function from this package
 
 # Note: The original dashboard_api.py had a logger instance:
@@ -270,7 +270,7 @@ async def fetch_graph_data_logic(
         raise
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # Original location: dashboard_api.py lines 175-214 (get_task_tree_data function)
@@ -363,7 +363,7 @@ async def fetch_task_tree_data_logic() -> Dict[str, List[Dict[str, Any]]]:
         raise
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 # The Starlette JSONResponse wrappers that were in main.py (graph_data_endpoint, task_tree_data_endpoint)
 # will now be defined in `mcp_server_src/app/routes.py`. Those wrappers will call these `_logic` functions.

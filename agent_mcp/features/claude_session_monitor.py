@@ -6,26 +6,26 @@ import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from ..core.config import logger, get_project_dir
-from ..db.connection import get_db_connection
+from ..core.config import logger, get_project_dir, get_agent_dir
+from ..db import get_db_connection, return_connection
 from ..db.actions.agent_actions_db import log_agent_action_to_db
 
 
 class ClaudeSessionMonitor:
     """
-    Monitors .agent/registry.json for Claude Code session activity.
+    Monitors .mcp-maestro/registry.json for Claude Code session activity.
     Integrates with git-agentmcp hook for multi-agent coordination.
     """
 
     def __init__(self):
         self.project_dir = get_project_dir()
-        self.registry_path = Path(self.project_dir) / ".agent" / "registry.json"
+        self.registry_path = get_agent_dir() / "registry.json"
         self.last_modified = None
         self.known_sessions = {}
 
     async def monitor_registry_file(self, interval: int = 5):
         """
-        Periodically check .agent/registry.json for changes and process new sessions.
+        Periodically check .mcp-maestro/registry.json for changes and process new sessions.
         """
         logger.info(f"Claude session monitor started (checking every {interval}s)")
 
@@ -103,9 +103,16 @@ class ClaudeSessionMonitor:
             # Insert new session
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO claude_code_sessions 
+                INSERT INTO claude_code_sessions 
                 (session_id, pid, parent_pid, first_detected, last_activity, working_directory, status, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_id) DO UPDATE SET
+                    pid = %s,
+                    parent_pid = %s,
+                    last_activity = %s,
+                    working_directory = %s,
+                    status = %s,
+                    metadata = %s
             """,
                 (
                     session_id,
@@ -116,11 +123,17 @@ class ClaudeSessionMonitor:
                     session_data.get("working_directory"),
                     "detected",
                     json.dumps(session_data),
+                    session_data.get("pid", 0),
+                    session_data.get("parent_pid", 0),
+                    session_data.get("last_activity", now),
+                    session_data.get("working_directory"),
+                    "detected",
+                    json.dumps(session_data),
                 ),
             )
 
             conn.commit()
-            conn.close()
+            return_connection(conn)
 
             # Log detection activity
             log_agent_action_to_db(
@@ -157,8 +170,8 @@ class ClaudeSessionMonitor:
             cursor.execute(
                 """
                 UPDATE claude_code_sessions 
-                SET last_activity = ?, metadata = ?, status = 'active'
-                WHERE session_id = ?
+                SET last_activity = %s, metadata = %s, status = 'active'
+                WHERE session_id = %s
             """,
                 (
                     session_data.get(
@@ -170,7 +183,7 @@ class ClaudeSessionMonitor:
             )
 
             conn.commit()
-            conn.close()
+            return_connection(conn)
 
         except Exception as e:
             logger.error(
@@ -186,14 +199,14 @@ class ClaudeSessionMonitor:
             cursor.execute(
                 """
                 UPDATE claude_code_sessions 
-                SET status = 'inactive', last_activity = ?
-                WHERE session_id = ?
+                SET status = 'inactive', last_activity = %s
+                WHERE session_id = %s
             """,
                 (datetime.datetime.now().isoformat(), session_id),
             )
 
             conn.commit()
-            conn.close()
+            return_connection(conn)
 
             logger.info(f"Claude Code session marked inactive: {session_id}")
 
@@ -220,7 +233,7 @@ class ClaudeSessionMonitor:
             for row in cursor.fetchall():
                 sessions[row["session_id"]] = dict(row)
 
-            conn.close()
+            return_connection(conn)
             return sessions
 
         except Exception as e:

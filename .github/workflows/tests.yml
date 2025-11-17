@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     
     services:
       postgres:
@@ -18,7 +21,7 @@ jobs:
           POSTGRES_USER: agent_mcp
           POSTGRES_PASSWORD: agent_mcp_password
         options: >-
-          --health-cmd "sh -c 'pg_isready -U agent_mcp'"
+          --health-cmd pg_isready -U agent_mcp
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -36,19 +39,139 @@ jobs:
     - name: Install uv
       run: pip install uv
     
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      id: cache-uv
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+    
     - name: Install dependencies
       run: uv pip install --system -e ".[dev]"
     
-    - name: Run tests
-      if: hashFiles('tests') != ''
-      run: uv run pytest tests/ -v --tb=short
-      env:
-        AGENT_MCP_DB_HOST: localhost
-        AGENT_MCP_DB_PORT: 5432
-        AGENT_MCP_DB_NAME: agent_mcp
-        AGENT_MCP_DB_USER: agent_mcp
-        AGENT_MCP_DB_PASSWORD: agent_mcp_password
+    - name: Set up environment variables
+      run: |
+        echo "AGENT_MCP_DB_HOST=localhost" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_PORT=5432" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_NAME=agent_mcp" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_USER=agent_mcp" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_PASSWORD=agent_mcp_password" >> $GITHUB_ENV
+        echo "EMBEDDING_PROVIDER=openai" >> $GITHUB_ENV
+        echo "AGENT_MCP_API_PORT=8080" >> $GITHUB_ENV
+        echo "AGENT_MCP_DASHBOARD_PORT=3001" >> $GITHUB_ENV
     
-    - name: No tests found
-      if: hashFiles('tests') == ''
-      run: echo "No tests directory found - skipping tests"
+    - name: Install PostgreSQL client
+      run: sudo apt-get update && sudo apt-get install -y postgresql-client
+    
+    - name: Wait for PostgreSQL
+      run: |
+        until pg_isready -h localhost -p 5432 -U agent_mcp; do
+          echo "Waiting for PostgreSQL..."
+          sleep 1
+        done
+    
+    - name: Initialize database schema
+      run: |
+        python3 -c "from agent_mcp.db.postgres_schema import init_database; init_database()"
+    
+    - name: Run tests with coverage
+      id: test_coverage
+      run: |
+        set +e  # Don't fail on errors, we'll handle them below
+        uv run pytest tests/ --ignore=tests/benchmarks --cov=agent_mcp --cov-report=xml --cov-report=html --cov-report=term -v --tb=short | tee pytest_output.txt
+        TEST_EXIT_CODE=${PIPESTATUS[0]}
+        
+        # Extract test statistics (handle different pytest output formats)
+        PASSED=$(grep -iE '[0-9]+ passed' pytest_output.txt | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+        FAILED=$(grep -iE '[0-9]+ failed' pytest_output.txt | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+        SKIPPED=$(grep -iE '[0-9]+ skipped' pytest_output.txt | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+        
+        # If we can't find the format, try summary line format
+        if [ "$PASSED" = "0" ] && [ "$FAILED" = "0" ] && [ "$SKIPPED" = "0" ]; then
+          SUMMARY=$(grep -iE 'passed|failed|skipped' pytest_output.txt | tail -1 || echo "")
+          if [ -n "$SUMMARY" ]; then
+            PASSED=$(echo "$SUMMARY" | grep -oE '[0-9]+' | head -1 || echo "0")
+            FAILED=$(echo "$SUMMARY" | grep -oE '[0-9]+' | head -2 | tail -1 || echo "0")
+            SKIPPED=$(echo "$SUMMARY" | grep -oE '[0-9]+' | tail -1 || echo "0")
+          fi
+        fi
+        
+        # Total is sum of all test results
+        TOTAL=$((PASSED + FAILED + SKIPPED))
+        
+        echo "passed=$PASSED" >> $GITHUB_OUTPUT
+        echo "failed=$FAILED" >> $GITHUB_OUTPUT
+        echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
+        echo "total=$TOTAL" >> $GITHUB_OUTPUT
+        
+        # Show extracted values for debugging
+        echo "Extracted test stats: passed=$PASSED, failed=$FAILED, skipped=$SKIPPED, total=$TOTAL"
+        
+        # Exit with pytest's exit code (fail the step if tests failed)
+        exit $TEST_EXIT_CODE
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-test123456789012345678901234567890' }}
+        EMBEDDING_PROVIDER: ollama
+    
+    - name: Update README with test stats
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        python3 scripts/update-test-badges.py < pytest_output.txt || echo "Failed to update README stats"
+        if git diff --quiet README.md; then
+          echo "No changes to README.md"
+        else
+          git add README.md
+          git commit -m "docs: Update test statistics in README [skip ci]" || echo "No changes to commit"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git push origin HEAD:main || echo "Failed to push README update"
+        fi
+      continue-on-error: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+    
+    - name: Comment PR with test results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const passed = '${{ steps.test_coverage.outputs.passed }}';
+          const failed = '${{ steps.test_coverage.outputs.failed }}';
+          const skipped = '${{ steps.test_coverage.outputs.skipped }}';
+          const total = '${{ steps.test_coverage.outputs.total }}';
+          
+          // Determine status emoji
+          let statusEmoji = '✅';
+          if (failed !== '0' && failed !== '' && parseInt(failed) > 0) {
+            statusEmoji = '❌';
+          } else if (skipped !== '0' && skipped !== '' && parseInt(skipped) > parseInt(total) * 0.1) {
+            statusEmoji = '⚠️';
+          }
+          
+          const body = `## Test Results ${statusEmoji}\n\n` +
+            `- **Total Tests:** ${total || 'N/A'}\n` +
+            `- **Passed:** ${passed || '0'} ✅\n` +
+            `- **Failed:** ${failed || '0'}${failed !== '0' && failed !== '' ? ' ❌' : ''}\n` +
+            `- **Skipped:** ${skipped || '0'}\n\n` +
+            `[View full test logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+

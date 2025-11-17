@@ -84,7 +84,7 @@ npm run dev
 ```
 
 ### 5. Connect AI Assistant
-**For Claude Code**, add to your `mcp.json`:
+**For Claude Code**, add to your `mcp.json` (see `docs/examples/mcp.json` for an example):
 ```json
 {
   "mcpServers": {

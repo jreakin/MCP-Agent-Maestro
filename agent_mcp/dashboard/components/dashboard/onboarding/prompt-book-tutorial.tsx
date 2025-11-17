@@ -27,7 +27,7 @@ interface TutorialStep {
 const tutorialSteps: TutorialStep[] = [
   {
     title: "Welcome to Prompt Book",
-    description: "Your central hub for Agent-MCP workflows and prompts",
+    description: "Your central hub for MCP Maestro workflows and prompts",
     icon: BookOpen,
     content: (
       <div className="space-y-4">
@@ -37,7 +37,7 @@ const tutorialSteps: TutorialStep[] = [
           </div>
           <h3 className="text-lg font-semibold">Welcome to your Prompt Book!</h3>
           <p className="text-muted-foreground">
-            This is your centralized collection of standardized prompts and workflows for Agent-MCP. 
+            This is your centralized collection of standardized prompts and workflows for MCP Maestro. 
             Think of it as your personal AI prompt library.
           </p>
         </div>
@@ -49,7 +49,7 @@ const tutorialSteps: TutorialStep[] = [
               <span className="font-medium text-sm">Standardized</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Pre-built prompts for common Agent-MCP tasks
+              Pre-built prompts for common MCP Maestro tasks
             </p>
           </div>
           <div className="p-3 border rounded-lg bg-muted/30">
@@ -135,7 +135,7 @@ const tutorialSteps: TutorialStep[] = [
             <span className="font-medium text-blue-900 dark:text-blue-100 text-sm">Pro Tip</span>
           </div>
           <p className="text-xs text-blue-800 dark:text-blue-200">
-            Start with the "Quick Start" section to see the essential prompts for getting Agent-MCP running.
+            Start with the "Quick Start" section to see the essential prompts for getting MCP Maestro running.
           </p>
         </div>
       </div>
@@ -211,7 +211,7 @@ const tutorialSteps: TutorialStep[] = [
         
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Agent-MCP works best when you follow a structured workflow. Here's the typical sequence:
+            MCP Maestro works best when you follow a structured workflow. Here's the typical sequence:
           </p>
           
           <div className="space-y-2">
@@ -308,6 +308,7 @@ export function PromptBookTutorial({ open, onOpenChange }: PromptBookTutorialPro
 
   useEffect(() => {
     // Check if user has seen the tutorial before
+    if (typeof window === 'undefined') return
     const completed = localStorage.getItem('prompt-book-tutorial-completed')
     setHasCompletedTutorial(completed === 'true')
   }, [])
@@ -325,7 +326,9 @@ export function PromptBookTutorial({ open, onOpenChange }: PromptBookTutorialPro
   }
 
   const closeTutorial = () => {
-    localStorage.setItem('prompt-book-tutorial-completed', 'true')
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('prompt-book-tutorial-completed', 'true')
+    }
     setHasCompletedTutorial(true)
     onOpenChange(false)
     setCurrentStep(0)
@@ -424,6 +427,7 @@ export function usePromptBookTutorial() {
   const [showTutorial, setShowTutorial] = useState(false)
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
     const hasSeenTutorial = localStorage.getItem('prompt-book-tutorial-completed')
     if (!hasSeenTutorial) {
       // Small delay to let the component mount

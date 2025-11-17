@@ -6,7 +6,7 @@ import json
 import hashlib
 import glob
 import os
-import sqlite3
+import psycopg2
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, Optional, NoReturn
 
@@ -27,7 +27,7 @@ from ...core.config import (
     ADVANCED_EMBEDDINGS,  # Import advanced mode flag at module level
 )
 from ...core import globals as g  # For server_running flag
-from ...db.connection import get_db_connection, is_vss_loadable
+from ...db import get_db_connection, is_vss_loadable, return_connection
 
 # We need the actual OpenAI client, not just the service module, for batching logic.
 # The client instance is stored in g.openai_client_instance by openai_service.initialize_openai_client()
@@ -68,7 +68,7 @@ IGNORE_DIRS_FOR_INDEXING = [
     "target",
     ".pytest_cache",
     ".ipynb_checkpoints",
-    ".agent",  # Also ignore the .agent directory itself
+    ".mcp-maestro",  # Also ignore the .mcp-maestro directory itself
 ]
 
 # Increased concurrency for Tier 3 pricing (5000 RPM)
@@ -199,9 +199,10 @@ async def run_rag_indexing_periodically(
 
             # Check for rag_embeddings table specifically
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='rag_embeddings'"
+                "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'rag_embeddings') as exists"
             )
-            if cursor.fetchone() is None:
+            result = cursor.fetchone()
+            if not (result['exists'] if isinstance(result, dict) else result[0]):
                 logger.warning(
                     "Vector table 'rag_embeddings' not found. Skipping RAG indexing cycle. Ensure DB schema is initialized."
                 )
@@ -349,9 +350,9 @@ async def run_rag_indexing_periodically(
                 last_ctx_time_str  # Keep as ISO string for direct comparison
             )
 
-            # The original checked `last_updated > ?`. This is good.
+            # The original checked `last_updated > %s`. This is good.
             cursor.execute(
-                "SELECT context_key, value, description, last_updated FROM project_context WHERE last_updated > ?",
+                "SELECT context_key, value, description, last_updated FROM project_context WHERE last_updated > %s",
                 (last_ctx_time_str,),
             )
             for row in cursor.fetchall():
@@ -388,7 +389,7 @@ async def run_rag_indexing_periodically(
                 cursor.execute(
                     "SELECT task_id, title, description, status, assigned_to, created_by, "
                     "parent_task, depends_on_tasks, priority, created_at, updated_at "
-                    "FROM tasks WHERE updated_at > ?",
+                    "FROM tasks WHERE updated_at > %s",
                     (last_task_time_str,),
                 )
 
@@ -449,19 +450,20 @@ async def run_rag_indexing_periodically(
                 )
                 delete_count = 0
                 for source_type, source_ref, _, _ in sources_to_process_for_embedding:
-                    # Delete from embeddings first (using rowid from chunks)
+                    # Delete from embeddings first (using chunk_id from chunks)
                     # Ensure rag_embeddings table exists before attempting delete
                     cursor.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name='rag_embeddings'"
+                        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'rag_embeddings') as exists"
                     )
-                    if cursor.fetchone() is not None:
+                    result = cursor.fetchone()
+                    if (result['exists'] if isinstance(result, dict) else result[0]):
                         res_emb = cursor.execute(
-                            "DELETE FROM rag_embeddings WHERE rowid IN (SELECT chunk_id FROM rag_chunks WHERE source_type = ? AND source_ref = ?)",
+                            "DELETE FROM rag_embeddings WHERE chunk_id IN (SELECT chunk_id FROM rag_chunks WHERE source_type = %s AND source_ref = %s)",
                             (source_type, source_ref),
                         )
                     # Delete from chunks
                     res_chk = cursor.execute(
-                        "DELETE FROM rag_chunks WHERE source_type = ? AND source_ref = ?",
+                        "DELETE FROM rag_chunks WHERE source_type = %s AND source_ref = %s",
                         (source_type, source_ref),
                     )
                     if res_chk.rowcount > 0:
@@ -674,7 +676,7 @@ async def run_rag_indexing_periodically(
                             "Inserting new chunks and embeddings into the database..."
                         )
                         inserted_count = 0
-                        indexed_at_iso = datetime.datetime.now().isoformat()
+                        created_at_iso = datetime.datetime.now().isoformat()
                         for i, chunk_text_to_insert in enumerate(
                             all_chunks_texts_to_embed
                         ):
@@ -699,21 +701,23 @@ async def run_rag_indexing_periodically(
                                     else None
                                 )
                                 cursor.execute(
-                                    "INSERT INTO rag_chunks (source_type, source_ref, chunk_text, indexed_at, metadata) VALUES (?, ?, ?, ?, ?)",
+                                    "INSERT INTO rag_chunks (source_type, source_ref, chunk_text, chunk_index, metadata) VALUES (%s, %s, %s, %s, %s) RETURNING chunk_id",
                                     (
                                         source_type,
                                         source_ref,
                                         chunk_text_to_insert,
-                                        indexed_at_iso,
+                                        i,  # chunk_index
                                         metadata_json,
                                     ),
                                 )
-                                chunk_rowid = cursor.lastrowid  # This is the chunk_id
+                                result = cursor.fetchone()
+                                chunk_chunk_id = result['chunk_id'] if isinstance(result, dict) else result[0]  # This is the chunk_id
 
-                                embedding_json_str = json.dumps(embedding_vector)
+                                # Convert embedding list to pgvector format
+                                embedding_array = embedding_vector
                                 cursor.execute(
-                                    "INSERT INTO rag_embeddings (rowid, embedding) VALUES (?, ?)",
-                                    (chunk_rowid, embedding_json_str),
+                                    "INSERT INTO rag_embeddings (chunk_id, embedding, model_name) VALUES (%s, %s::vector, %s)",
+                                    (chunk_chunk_id, embedding_array, EMBEDDING_MODEL),
                                 )
                                 inserted_count += 1
                                 # Mark this source's hash to be updated in rag_meta
@@ -723,7 +727,7 @@ async def run_rag_indexing_periodically(
                                 processed_hashes_to_update_in_meta[
                                     meta_key_for_hash_update
                                 ] = current_hash_of_source
-                            except sqlite3.Error as db_err:
+                            except psycopg2.Error as db_err:
                                 logger.error(
                                     f"DB Error inserting chunk/embedding for {source_type}:{source_ref} (Chunk index {i}): {db_err}"
                                 )
@@ -750,7 +754,7 @@ async def run_rag_indexing_periodically(
                                 processed_hashes_to_update_in_meta.items()
                             )
                             cursor.executemany(
-                                "INSERT OR REPLACE INTO rag_meta (meta_key, meta_value) VALUES (?, ?)",
+                                "INSERT INTO rag_meta (meta_key, meta_value) VALUES (%s, %s) ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value",
                                 meta_update_tuples,
                             )
                     else:
@@ -773,11 +777,11 @@ async def run_rag_indexing_periodically(
                         + "Z"
                     )
                     cursor.execute(
-                        "INSERT OR REPLACE INTO rag_meta (meta_key, meta_value) VALUES (?, ?)",
+                        "INSERT INTO rag_meta (meta_key, meta_value) VALUES (%s, %s) ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value",
                         ("last_indexed_markdown", new_md_time_iso),
                     )
                 cursor.execute(
-                    "INSERT OR REPLACE INTO rag_meta (meta_key, meta_value) VALUES (?, ?)",
+                    "INSERT INTO rag_meta (meta_key, meta_value) VALUES (%s, %s) ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value",
                     ("last_indexed_context", max_ctx_mod_time_iso),
                 )
 
@@ -790,11 +794,11 @@ async def run_rag_indexing_periodically(
                         + "Z"
                     )
                     cursor.execute(
-                        "INSERT OR REPLACE INTO rag_meta (meta_key, meta_value) VALUES (?, ?)",
+                        "INSERT INTO rag_meta (meta_key, meta_value) VALUES (%s, %s) ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value",
                         ("last_indexed_code", new_code_time_iso),
                     )
                     cursor.execute(
-                        "INSERT OR REPLACE INTO rag_meta (meta_key, meta_value) VALUES (?, ?)",
+                        "INSERT INTO rag_meta (meta_key, meta_value) VALUES (%s, %s) ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value",
                         ("last_indexed_tasks", max_task_mod_time_iso),
                     )
                 # Add other source types here
@@ -808,17 +812,19 @@ async def run_rag_indexing_periodically(
             # Diagnostic query (Original main.py:740-747)
             try:
                 diag_cursor = conn.cursor()  # Use a new cursor or the same one
-                diag_cursor.execute("SELECT COUNT(*) FROM rag_chunks")
-                chunk_count_diag = diag_cursor.fetchone()[0]
-                diag_cursor.execute("SELECT COUNT(*) FROM rag_embeddings")
-                embedding_count_diag = diag_cursor.fetchone()[0]
+                diag_cursor.execute("SELECT COUNT(*) as count FROM rag_chunks")
+                result = diag_cursor.fetchone()
+                chunk_count_diag = result['count'] if isinstance(result, dict) else result[0]
+                diag_cursor.execute("SELECT COUNT(*) as count FROM rag_embeddings")
+                result = diag_cursor.fetchone()
+                embedding_count_diag = result['count'] if isinstance(result, dict) else result[0]
                 logger.info(
                     f"DB RAG DIAGNOSTIC: Found {chunk_count_diag} chunks and {embedding_count_diag} embeddings post-cycle."
                 )
             except Exception as e_diag:
                 logger.error(f"Error running RAG database diagnostics: {e_diag}")
 
-        except sqlite3.OperationalError as e_sqlite_op:  # main.py:750-753
+        except psycopg2.OperationalError as e_sqlite_op:  # main.py:750-753
             if (
                 "no such module: vec0" in str(e_sqlite_op)
                 or "vector search requires" in str(e_sqlite_op).lower()
@@ -838,7 +844,7 @@ async def run_rag_indexing_periodically(
             logger.error(f"Error in RAG indexing cycle: {e_cycle}", exc_info=True)
         finally:
             if conn:
-                conn.close()
+                return_connection(conn)
 
         elapsed_cycle_time = time.time() - cycle_start_time
         logger.info(
@@ -887,12 +893,11 @@ async def index_task_data(task_id: str, task_data: Dict[str, Any]) -> None:
 
         # Delete existing chunks for this task
         cursor.execute(
-            "DELETE FROM rag_embeddings WHERE rowid IN "
-            "(SELECT chunk_id FROM rag_chunks WHERE source_type = ? AND source_ref = ?)",
+            "DELETE FROM rag_embeddings WHERE chunk_id IN (SELECT chunk_id FROM rag_chunks WHERE source_type = %s AND source_ref = %s)",
             ("task", task_id),
         )
         cursor.execute(
-            "DELETE FROM rag_chunks WHERE source_type = ? AND source_ref = ?",
+            "DELETE FROM rag_chunks WHERE source_type = %s AND source_ref = %s",
             ("task", task_id),
         )
 
@@ -915,17 +920,17 @@ async def index_task_data(task_id: str, task_data: Dict[str, Any]) -> None:
 
                 # Insert chunk
                 cursor.execute(
-                    "INSERT INTO rag_chunks (source_type, source_ref, chunk_text, indexed_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    ("task", task_id, chunk_text, datetime.datetime.now().isoformat()),
+                    "INSERT INTO rag_chunks (source_type, source_ref, chunk_text, chunk_index) "
+                    "VALUES (%s, %s, %s, %s) RETURNING chunk_id",
+                    ("task", task_id, chunk_text, 0),  # chunk_index for tasks is usually 0
                 )
-                chunk_id = cursor.lastrowid
+                result = cursor.fetchone()
+                chunk_id = result['chunk_id'] if isinstance(result, dict) else result[0]
 
-                # Insert embedding
-                embedding_json_str = json.dumps(embedding_vector)
+                # Insert embedding using pgvector
                 cursor.execute(
-                    "INSERT INTO rag_embeddings (rowid, embedding) VALUES (?, ?)",
-                    (chunk_id, embedding_json_str),
+                    "INSERT INTO rag_embeddings (chunk_id, embedding, model_name) VALUES (%s, %s::vector, %s)",
+                    (chunk_id, embedding_vector, EMBEDDING_MODEL),
                 )
 
             except Exception as e:
@@ -940,7 +945,7 @@ async def index_task_data(task_id: str, task_data: Dict[str, Any]) -> None:
             conn.rollback()
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 async def index_all_tasks() -> None:
@@ -975,8 +980,8 @@ async def index_all_tasks() -> None:
 
         # Update last indexed time
         cursor.execute(
-            "INSERT OR REPLACE INTO rag_meta (meta_key, meta_value) VALUES (?, ?)",
-            ("last_indexed_tasks", datetime.datetime.now().isoformat()),
+            "INSERT INTO rag_meta (meta_key, meta_value) VALUES (%s, %s) ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value",
+            ("last_indexed_tasks"),
         )
         conn.commit()
 
@@ -984,7 +989,7 @@ async def index_all_tasks() -> None:
         logger.error(f"Error indexing all tasks: {e}", exc_info=True)
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 def format_task_for_embedding(task_data: Dict[str, Any]) -> str:

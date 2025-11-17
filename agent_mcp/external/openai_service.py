@@ -17,7 +17,8 @@ except ImportError:
     openai = None # Make openai None so subsequent checks fail gracefully
 
 # Import configurations and global variables
-from ..core.config import logger, OPENAI_API_KEY_ENV # OPENAI_API_KEY_ENV from config
+from ..core.config import logger, OPENAI_API_KEY_ENV # OPENAI_API_KEY_ENV from config (backward compat)
+from ..core.settings import get_settings
 from ..core import globals as g # To store the client instance if needed globally
 
 # The openai_client instance will be stored in g.openai_client_instance
@@ -41,8 +42,18 @@ def initialize_openai_client() -> Optional[openai.OpenAI]:
         logger.error("OpenAI library failed to import. Cannot initialize client.")
         return None
 
-    if not OPENAI_API_KEY_ENV: # Check from config.py, which got it from os.environ
-        logger.error("OPENAI_API_KEY not found in environment variables. Cannot initialize OpenAI client.")
+    # Get API key from settings
+    settings = get_settings()
+    api_key = (
+        settings.openai_api_key.get_secret_value() 
+        if settings.openai_api_key is not None 
+        else None
+    )
+    
+    if not api_key:
+        embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+        if embedding_provider != "ollama":
+            logger.warning("OPENAI_API_KEY not found. Use EMBEDDING_PROVIDER=ollama for local models.")
         # Do not print to console - just log to file
         return None
 
@@ -50,7 +61,7 @@ def initialize_openai_client() -> Optional[openai.OpenAI]:
     try:
         # Create the OpenAI client instance
         # Original main.py:191
-        client = openai.OpenAI(api_key=OPENAI_API_KEY_ENV)
+        client = openai.OpenAI(api_key=api_key)
 
         # Test the connection by making a simple, low-cost API call
         # Original main.py:193 (client.models.list())

@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.agent/
+*.log
+.env
+.env.local
+
+# Node (for dashboard)
+node_modules/
+npm-debug.log
+.next/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mutmut-cache/
+# Note: .corpus/ is NOT ignored - we want to seed fuzzing corpus in container
+
+# Documentation
+docs/
+*.md
+!README.md
+!TESTING.md
+!POSTGRESQL_CONVERSION_SUMMARY.md
+!DOCKER_SETUP.md
+!INTEGRATION_GUIDE.md

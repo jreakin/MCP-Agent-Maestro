@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useServerStore, MCPServer } from "@/lib/stores/server-store"
+import { Trash2 } from "lucide-react"
 
 export function ProjectPicker() {
   const {
@@ -34,7 +35,8 @@ export function ProjectPicker() {
     connectionError,
     setActiveServer,
     refreshAllServers,
-    disconnectServer
+    disconnectServer,
+    removeServer
   } = useServerStore()
 
   const [isOpen, setIsOpen] = useState(false)
@@ -132,7 +134,13 @@ export function ProjectPicker() {
           {servers.map((server) => (
             <DropdownMenuItem
               key={server.id}
-              onClick={() => handleServerSelect(server.id)}
+              onClick={(e) => {
+                // Don't trigger selection when clicking remove button
+                if ((e.target as HTMLElement).closest('.remove-button')) {
+                  return
+                }
+                handleServerSelect(server.id)
+              }}
               className="flex items-center justify-between p-3 cursor-pointer"
               disabled={isConnecting}
             >
@@ -163,6 +171,19 @@ export function ProjectPicker() {
                 >
                   {server.status}
                 </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 opacity-50 hover:opacity-100 text-destructive hover:text-destructive remove-button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (confirm(`Delete server "${server.name}"?`)) {
+                      removeServer(server.id)
+                    }
+                  }}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </Button>
               </div>
             </DropdownMenuItem>
           ))}

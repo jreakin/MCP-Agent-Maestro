@@ -8,11 +8,12 @@
   },
   "scripts": {
     "dev": "node scripts/start-dev.js",
-    "build": "NODE_ENV=production next build",
+    "build": "NODE_ENV=production DOCKER_BUILD=true next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@radix-ui/react-alert-dialog": "^1.1.2",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-dropdown-menu": "^2.1.15",

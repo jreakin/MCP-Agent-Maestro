@@ -65,7 +65,7 @@ export function AppSidebar() {
               <div className="h-6 w-6 rounded bg-primary/20 flex items-center justify-center">
                 <span className="text-xs font-semibold text-primary">M</span>
               </div>
-              <span className="font-semibold text-sm text-foreground">MCP Control</span>
+              <span className="font-semibold text-sm text-foreground">MCP Maestro</span>
             </div>
           )}
           {!isMobile && (
@@ -96,7 +96,7 @@ export function AppSidebar() {
         <div className="flex items-center justify-between">
           {!collapsed && (
             <div className="text-xs text-muted-foreground">
-              <div className="font-medium text-foreground">AgentMCP Dashboard</div>
+              <div className="font-medium text-foreground">MCP Maestro</div>
               <div className="text-muted-foreground">v2.2 • Improved Dashboard</div>
             </div>
           )}
