@@ -3,7 +3,7 @@
 # DEPLOYMENT MODES:
 # 1. Standalone: Run this docker-compose.yml directly (creates isolated network)
 # 2. Integrated: Copy services into your project's docker-compose.yml (use your network)
-#    See INTEGRATION_EXAMPLE.yml for integration pattern
+#    See docs/examples/INTEGRATION_EXAMPLE.yml for integration pattern
 #
 # When integrating into another project:
 # - Change network from 'agent-mcp-network' to your project's network name

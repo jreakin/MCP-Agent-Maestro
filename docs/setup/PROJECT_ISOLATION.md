@@ -109,7 +109,7 @@ When each project has its own database, the following are completely isolated:
 
 ## Integration Example
 
-See `INTEGRATION_EXAMPLE.yml` for how to add Agent-MCP to an existing project:
+See `docs/examples/INTEGRATION_EXAMPLE.yml` for how to add Agent-MCP to an existing project:
 
 ```yaml
 # In your project's docker-compose.yml

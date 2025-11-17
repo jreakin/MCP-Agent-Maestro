@@ -36,7 +36,7 @@ AGENT_MCP_DB_PASSWORD=secure_password_here
 
 ### Step 2: Add services to your `docker-compose.yml`
 
-Copy the Agent-MCP services from `INTEGRATION_EXAMPLE.yml` into your existing docker-compose.yml.
+Copy the Agent-MCP services from `docs/examples/INTEGRATION_EXAMPLE.yml` into your existing docker-compose.yml.
 
 ### Step 3: Start everything
 
