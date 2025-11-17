@@ -1,5 +1,5 @@
 """
-OpenAPI/Swagger documentation generation for Agent-MCP API.
+OpenAPI/Swagger documentation generation for MCP Agent Maestro API.
 """
 from typing import Dict, Any, List
 from starlette.requests import Request
@@ -50,19 +50,100 @@ def generate_openapi_schema() -> Dict[str, Any]:
         "paths": {
             "/health": {
                 "get": {
-                    "summary": "Health check",
-                    "description": "Check if the service is healthy",
+                    "summary": "Comprehensive Health Check",
+                    "description": "Check the health status of MCP Agent Maestro services. Returns detailed status for database, server, embedding service, agent capacity, RAG system, and memory usage.",
+                    "tags": ["Health"],
                     "responses": {
                         "200": {
-                            "description": "Service is healthy",
+                            "description": "Service is healthy or degraded (warnings present)",
                             "content": {
                                 "application/json": {
                                     "schema": {
                                         "type": "object",
                                         "properties": {
-                                            "status": {"type": "string"},
-                                            "timestamp": {"type": "number"},
-                                            "checks": {"type": "object"}
+                                            "status": {
+                                                "type": "string",
+                                                "enum": ["healthy", "degraded", "unhealthy"],
+                                                "description": "Overall health status"
+                                            },
+                                            "timestamp": {
+                                                "type": "number",
+                                                "description": "Unix timestamp of the health check"
+                                            },
+                                            "checks": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "database": {
+                                                        "type": "object",
+                                                        "description": "Database connection pool health"
+                                                    },
+                                                    "server": {
+                                                        "type": "object",
+                                                        "description": "Server startup status"
+                                                    },
+                                                    "embedding_service": {
+                                                        "type": "object",
+                                                        "description": "Embedding service (OpenAI/Ollama) availability"
+                                                    },
+                                                    "agent_capacity": {
+                                                        "type": "object",
+                                                        "description": "Agent capacity and availability"
+                                                    },
+                                                    "rag_system": {
+                                                        "type": "object",
+                                                        "description": "RAG system health and vector search status"
+                                                    },
+                                                    "memory": {
+                                                        "type": "object",
+                                                        "description": "Memory usage statistics"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "required": ["status", "timestamp", "checks"]
+                                    },
+                                    "examples": {
+                                        "healthy": {
+                                            "summary": "All systems healthy",
+                                            "value": {
+                                                "status": "healthy",
+                                                "timestamp": 1704067200.0,
+                                                "checks": {
+                                                    "database": {"status": "healthy", "pool_stats": {"minconn": 1, "maxconn": 10}},
+                                                    "server": {"status": "healthy", "started": True},
+                                                    "embedding_service": {"status": "healthy", "provider": "openai", "available": True},
+                                                    "agent_capacity": {"status": "healthy", "active_agents": 3, "max_workers": 10, "available_slots": 7},
+                                                    "rag_system": {"status": "healthy", "enabled": True, "vector_search_available": True, "table_exists": True},
+                                                    "memory": {"status": "healthy", "memory_mb": 256.5, "memory_percent": 12.3}
+                                                }
+                                            }
+                                        },
+                                        "degraded": {
+                                            "summary": "Service degraded with warnings",
+                                            "value": {
+                                                "status": "degraded",
+                                                "timestamp": 1704067200.0,
+                                                "checks": {
+                                                    "database": {"status": "healthy"},
+                                                    "server": {"status": "healthy"},
+                                                    "agent_capacity": {"status": "warning", "active_agents": 9, "max_workers": 10}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "503": {
+                            "description": "Service is unhealthy",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "status": {"type": "string", "enum": ["unhealthy"]},
+                                            "error": {"type": "string"},
+                                            "timestamp": {"type": "number"}
                                         }
                                     }
                                 }
@@ -73,14 +154,83 @@ def generate_openapi_schema() -> Dict[str, Any]:
             },
             "/metrics": {
                 "get": {
-                    "summary": "Get metrics",
-                    "description": "Get system and application metrics",
+                    "summary": "System and Application Metrics",
+                    "description": "Get Prometheus-style metrics for system and application monitoring. Includes CPU, memory, database pool stats, and application-specific metrics.",
+                    "tags": ["Health", "Monitoring"],
                     "responses": {
                         "200": {
                             "description": "Metrics data",
                             "content": {
                                 "application/json": {
-                                    "schema": {"type": "object"}
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "timestamp": {"type": "number", "description": "Unix timestamp"},
+                                            "system": {
+                                                "type": "object",
+                                                "description": "System-level metrics (CPU, memory, etc.)",
+                                                "properties": {
+                                                    "cpu_percent": {"type": "number"},
+                                                    "memory_mb": {"type": "number"},
+                                                    "memory_percent": {"type": "number"},
+                                                    "num_threads": {"type": "integer"},
+                                                    "cpu_count": {"type": "integer"}
+                                                }
+                                            },
+                                            "database": {
+                                                "type": "object",
+                                                "description": "Database connection pool metrics"
+                                            },
+                                            "application": {
+                                                "type": "object",
+                                                "description": "Application-specific metrics (agents, tasks, etc.)",
+                                                "properties": {
+                                                    "active_agents": {"type": "integer"},
+                                                    "total_tasks": {"type": "integer"},
+                                                    "server_uptime_seconds": {"type": "number"}
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "examples": {
+                                        "metrics": {
+                                            "summary": "Example metrics output",
+                                            "value": {
+                                                "timestamp": 1704067200.0,
+                                                "system": {
+                                                    "cpu_percent": 15.5,
+                                                    "memory_mb": 512.3,
+                                                    "memory_percent": 25.1,
+                                                    "num_threads": 8,
+                                                    "cpu_count": 4
+                                                },
+                                                "database": {
+                                                    "pool_healthy": True,
+                                                    "pool_min_connections": 1,
+                                                    "pool_max_connections": 10
+                                                },
+                                                "application": {
+                                                    "active_agents": 3,
+                                                    "total_tasks": 15,
+                                                    "server_uptime_seconds": 3600
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "500": {
+                            "description": "Error retrieving metrics",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "error": {"type": "string"},
+                                            "timestamp": {"type": "number"}
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -962,7 +1112,7 @@ async def swagger_ui_route(request: Request) -> HTMLResponse:
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Agent-MCP API Documentation</title>
+        <title>MCP Agent Maestro API Documentation</title>
         <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css" />
         <style>
             html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }

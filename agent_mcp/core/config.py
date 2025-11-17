@@ -1,4 +1,4 @@
-# Agent-MCP/mcp_template/mcp_server_src/core/config.py
+# MCP Agent Maestro - Core configuration module
 import logging
 import os
 import sys
@@ -193,7 +193,7 @@ def enable_console_logging():
 
 # Initialize logging when this module is imported
 setup_logging()
-logger = logging.getLogger("mcp_server")  # Main application logger
+logger = logging.getLogger("mcp_agent_maestro")  # Main application logger
 
 # --- Agent Appearance ---
 AGENT_COLORS: List[str] = (
@@ -299,5 +299,5 @@ SECURITY_USE_ML_DETECTION: bool = _settings.security_use_ml_detection
 # Log that configuration is loaded (optional)
 logger.info("Core configuration loaded (with colorful logging setup).")
 # Example of how other modules will use this logger:
-# from mcp_server_src.core.config import logger
+# from agent_mcp.core.config import logger
 # logger.info("This is a log message from another module.")

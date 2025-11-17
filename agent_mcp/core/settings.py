@@ -1,16 +1,23 @@
-# Agent-MCP Unified Settings Configuration
+# MCP Agent Maestro Unified Settings Configuration
 """
 Unified configuration using Pydantic Settings.
 Replaces scattered os.environ.get() calls with type-safe, validated settings.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from typing import Literal, Optional
 from pathlib import Path
+import os
+import warnings
+import socket
 
 
 class AgentMCPSettings(BaseSettings):
-    """Unified configuration using Pydantic Settings."""
+    """Unified configuration using Pydantic Settings for MCP Agent Maestro.
+    
+    Maintains backward compatibility with AGENT_MCP_ prefix while supporting
+    future migration to MAESTRO_ prefix.
+    """
     
     # API & Server
     api_host: str = Field(default="localhost", description="API server host")
@@ -89,6 +96,85 @@ class AgentMCPSettings(BaseSettings):
         extra="ignore"
     )
     
+    @field_validator("db_password")
+    @classmethod
+    def validate_db_password(cls, v: Optional[str]) -> Optional[str]:
+        """Validate database password for production use."""
+        # Only validate in production-like environments
+        env = os.getenv("ENVIRONMENT", "").lower()
+        if env in ("production", "prod") and (v is None or v == ""):
+            raise ValueError("Database password is required for production use")
+        # Warn if password is weak in production
+        if env in ("production", "prod") and v and len(v) < 8:
+            warnings.warn("Database password is short (less than 8 characters). Consider using a stronger password in production.")
+        return v
+    
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, v: Optional[str]) -> Optional[str]:
+        """Validate database URL format if provided."""
+        if v is None:
+            return v
+        if not v.startswith(("postgresql://", "postgres://", "postgresql+psycopg2://")):
+            raise ValueError("Database URL must start with 'postgresql://', 'postgres://', or 'postgresql+psycopg2://'")
+        return v
+    
+    @field_validator("api_port")
+    @classmethod
+    def validate_api_port(cls, v: int) -> int:
+        """Validate API port is available (warning only, not enforced)."""
+        # Check if port is in restricted range
+        if v < 1024:
+            warnings.warn(f"Port {v} is in privileged range (<1024). This may require root/admin privileges.")
+        return v
+    
+    @model_validator(mode='after')
+    def validate_port_conflicts(self):
+        """Check for potential port conflicts between API and dashboard.
+        
+        Note: In Docker environments, API and dashboard may use the same port
+        number since they run in separate containers. This is allowed with a warning.
+        """
+        # Only raise error if ports are the same and we're not in Docker
+        # (Docker containers can use same port internally)
+        is_docker = os.path.exists('/.dockerenv') or os.environ.get('DOCKER_CONTAINER') == 'true'
+        
+        if self.api_port == self.dashboard_port:
+            if is_docker:
+                # In Docker, this is OK (different containers)
+                warnings.warn(
+                    f"API port ({self.api_port}) and dashboard port ({self.dashboard_port}) are the same. "
+                    "This is allowed in Docker where they run in separate containers, but may cause "
+                    "conflicts if running both services in the same process."
+                )
+            else:
+                # Outside Docker, this is a conflict
+                raise ValueError(
+                    f"API port ({self.api_port}) and dashboard port ({self.dashboard_port}) cannot be the same. "
+                    "They must run on different ports when in the same process."
+                )
+        
+        # Warn if ports seem to conflict (optional check)
+        if abs(self.api_port - self.dashboard_port) < 10 and self.api_port != self.dashboard_port:
+            warnings.warn(
+                f"API port ({self.api_port}) and dashboard port ({self.dashboard_port}) are close together. "
+                "Ensure they don't conflict."
+            )
+        
+        # Check if port is already in use (non-blocking check, skip in Docker)
+        if not is_docker:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.1)
+                result = sock.connect_ex(('localhost', self.api_port))
+                sock.close()
+                if result == 0:
+                    warnings.warn(f"Port {self.api_port} appears to be in use. The server may fail to start.")
+            except Exception:
+                pass  # Ignore socket errors during validation
+        
+        return self
+    
     @field_validator("openai_api_key")
     @classmethod
     def validate_api_key(cls, v: Optional[SecretStr]) -> Optional[SecretStr]:
@@ -101,6 +187,39 @@ class AgentMCPSettings(BaseSettings):
         if len(key_str) < 20:
             raise ValueError("API key appears invalid (too short)")
         return v
+    
+    def check_configuration_health(self) -> dict:
+        """Perform health checks on configuration.
+        
+        Returns:
+            Dictionary with health check results and warnings.
+        """
+        health = {
+            "status": "healthy",
+            "warnings": [],
+            "errors": []
+        }
+        
+        # Check database configuration
+        if not self.database_url and not self.db_password:
+            # Development mode is OK, but warn for production
+            env = os.getenv("ENVIRONMENT", "").lower()
+            if env in ("production", "prod"):
+                health["warnings"].append("Database password not set (may be OK for development)")
+        
+        # Check OpenAI API key if not using Ollama
+        embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+        if embedding_provider == "openai" and not self.openai_api_key:
+            health["warnings"].append("OpenAI API key not set (required unless using Ollama)")
+        
+        # Check security settings
+        if not self.security_enabled:
+            health["warnings"].append("Security features are disabled")
+        
+        if health["warnings"] or health["errors"]:
+            health["status"] = "warnings" if not health["errors"] else "unhealthy"
+        
+        return health
     
     @property
     def effective_embedding_model(self) -> str:

@@ -25,7 +25,7 @@ def ensure_env_file_simple(project_dir=None):
     if not env_path.exists():
         print(f"Creating default .env file at: {env_path}")
         
-        default_env_content = """# Agent-MCP Configuration
+        default_env_content = """# MCP Agent Maestro Configuration
 # This file was automatically generated. Edit as needed.
 
 # API & Server Configuration
@@ -104,7 +104,7 @@ AGENT_MCP_TASK_PLACEMENT_RAG_TIMEOUT=5
 
 # Find and ensure .env file exists
 current_file = Path(__file__).resolve()
-project_root = current_file.parent.parent  # Go up to Agent-MCP directory
+project_root = current_file.parent.parent  # Go up to MCP Agent Maestro directory
 
 # Ensure .env file exists (will create with defaults if missing)
 env_file = ensure_env_file_simple(project_root)

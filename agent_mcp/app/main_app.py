@@ -1,4 +1,4 @@
-# Agent-MCP/mcp_template/mcp_server_src/app/main_app.py
+# MCP Agent Maestro - Main application setup
 import uuid
 import datetime # For SSE connection logging
 from pathlib import Path

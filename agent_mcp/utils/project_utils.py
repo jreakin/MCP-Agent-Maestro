@@ -1,4 +1,4 @@
-# Agent-MCP/agent-mcp/utils/project_utils.py
+# MCP Agent Maestro - Project utilities
 import os
 import json
 import datetime
@@ -43,12 +43,12 @@ def init_agent_directory(project_dir_str: str) -> Optional[Path]:
 
     # Validate that the project directory is not the MCP directory itself
     # This logic needs to correctly identify the MCP codebase root.
-    # Assuming this file is at: Agent-MCP/agent-mcp/utils/project_utils.py
+    # Assuming this file is at: agent_mcp/utils/project_utils.py
     # Then, __file__.resolve() gives the path to this file.
     # .parent -> .../utils
     # .parent.parent -> .../mcp_server_src
     # .parent.parent.parent -> .../agent-mcp (This is the root of the agent code package)
-    # .parent.parent.parent.parent -> .../Agent-MCP (This is the repository root)
+    # .parent.parent.parent.parent -> .../ (This is the repository root)
     # The original check was against `Path(__file__).resolve().parent.parent` from `main.py`
     # which would be `agent-mcp`.
     agent_mcp_codebase_root_for_check = (

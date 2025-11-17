@@ -8,8 +8,10 @@ import time
 import os
 
 from ..core.config import logger
-from ..db import check_pool_health, get_pool_stats
+from ..core.settings import get_settings
+from ..db import check_pool_health, get_pool_stats, is_vss_loadable
 from ..core import globals as g
+from ..db.actions.agent_db import get_all_active_agents_from_db
 
 # psutil is optional for system metrics
 try:
@@ -22,10 +24,12 @@ except ImportError:
 
 async def health_check_route(request: Request) -> JSONResponse:
     """
-    Basic health check endpoint.
+    Comprehensive health check endpoint.
     Returns 200 if the service is healthy, 503 if unhealthy.
+    Checks database, server, embedding service, agent capacity, RAG system, and memory.
     """
     try:
+        settings = get_settings()
         health_status: Dict[str, Any] = {
             "status": "healthy",
             "timestamp": time.time(),
@@ -46,15 +50,133 @@ async def health_check_route(request: Request) -> JSONResponse:
             "started": has_started
         }
         
+        # Check embedding service status
+        embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+        if embedding_provider == "openai":
+            embedding_healthy = settings.openai_api_key is not None
+            health_status["checks"]["embedding_service"] = {
+                "status": "healthy" if embedding_healthy else "unhealthy",
+                "provider": "openai",
+                "available": embedding_healthy
+            }
+        else:
+            # For Ollama, we can't easily check without making a request
+            # Assume healthy if provider is set
+            health_status["checks"]["embedding_service"] = {
+                "status": "healthy",
+                "provider": "ollama",
+                "available": True
+            }
+        
+        # Check agent capacity
+        try:
+            active_agents = get_all_active_agents_from_db()
+            active_count = len(active_agents)
+            max_workers = settings.max_workers
+            agent_capacity_healthy = active_count <= max_workers
+            
+            health_status["checks"]["agent_capacity"] = {
+                "status": "healthy" if agent_capacity_healthy else "warning",
+                "active_agents": active_count,
+                "max_workers": max_workers,
+                "available_slots": max(0, max_workers - active_count)
+            }
+        except Exception as e:
+            logger.warning(f"Failed to check agent capacity: {e}")
+            health_status["checks"]["agent_capacity"] = {
+                "status": "unknown",
+                "error": str(e)
+            }
+        
+        # Check RAG system health
+        try:
+            vss_available = is_vss_loadable()
+            rag_enabled = settings.rag_enabled
+            
+            # Try to check if rag_embeddings table exists
+            from ..db import get_db_connection
+            conn = None
+            rag_table_exists = False
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'rag_embeddings') as exists"
+                )
+                result = cursor.fetchone()
+                rag_table_exists = result['exists'] if isinstance(result, dict) else result[0]
+            except Exception:
+                pass
+            finally:
+                if conn:
+                    from ..db.postgres_connection import return_connection
+                    return_connection(conn)
+            
+            rag_healthy = rag_enabled and vss_available and rag_table_exists
+            
+            health_status["checks"]["rag_system"] = {
+                "status": "healthy" if rag_healthy else "unhealthy",
+                "enabled": rag_enabled,
+                "vector_search_available": vss_available,
+                "table_exists": rag_table_exists
+            }
+        except Exception as e:
+            logger.warning(f"Failed to check RAG system: {e}")
+            health_status["checks"]["rag_system"] = {
+                "status": "unknown",
+                "error": str(e)
+            }
+        
+        # Check memory usage
+        try:
+            if PSUTIL_AVAILABLE:
+                process = psutil.Process(os.getpid())
+                memory_info = process.memory_info()
+                memory_mb = memory_info.rss / 1024 / 1024
+                memory_percent = process.memory_percent()
+                
+                # Consider memory healthy if under 90% of system memory
+                memory_healthy = memory_percent < 90
+                
+                health_status["checks"]["memory"] = {
+                    "status": "healthy" if memory_healthy else "warning",
+                    "memory_mb": round(memory_mb, 2),
+                    "memory_percent": round(memory_percent, 2)
+                }
+            else:
+                health_status["checks"]["memory"] = {
+                    "status": "unknown",
+                    "note": "psutil not available"
+                }
+        except Exception as e:
+            logger.warning(f"Failed to check memory: {e}")
+            health_status["checks"]["memory"] = {
+                "status": "unknown",
+                "error": str(e)
+            }
+        
         # Determine overall health
-        all_healthy = (
-            db_healthy and
+        critical_checks = [
+            db_healthy,
             has_started
+        ]
+        all_critical_healthy = all(critical_checks)
+        
+        # Check if any checks have warnings
+        has_warnings = any(
+            check.get("status") == "warning" 
+            for check in health_status["checks"].values()
         )
         
-        health_status["status"] = "healthy" if all_healthy else "unhealthy"
-        
-        status_code = 200 if all_healthy else 503
+        if all_critical_healthy and not has_warnings:
+            health_status["status"] = "healthy"
+            status_code = 200
+        elif all_critical_healthy and has_warnings:
+            health_status["status"] = "degraded"
+            status_code = 200  # Still return 200 for degraded
+        else:
+            health_status["status"] = "unhealthy"
+            status_code = 503
         
         return JSONResponse(health_status, status_code=status_code)
         
@@ -74,13 +196,31 @@ async def metrics_route(request: Request) -> JSONResponse:
     """
     Metrics endpoint for Prometheus-style monitoring.
     Returns system and application metrics.
+    
+    Supports two formats:
+    - JSON format (default): Returns structured JSON metrics
+    - Prometheus format: Returns Prometheus text format (add ?format=prometheus)
     """
     try:
+        # Check if Prometheus format is requested
+        format_type = request.query_params.get("format", "json").lower()
+        
+        if format_type == "prometheus":
+            from ..utils.metrics import format_prometheus_metrics
+            from starlette.responses import Response
+            prometheus_text = format_prometheus_metrics()
+            return Response(
+                content=prometheus_text,
+                media_type="text/plain; version=0.0.4"
+            )
+        
+        # JSON format (default)
         metrics: Dict[str, Any] = {
             "timestamp": time.time(),
             "system": {},
             "database": {},
-            "application": {}
+            "application": {},
+            "prometheus": {}
         }
         
         # System metrics
@@ -133,6 +273,14 @@ async def metrics_route(request: Request) -> JSONResponse:
         except Exception as e:
             logger.warning(f"Failed to collect application metrics: {e}")
             metrics["application"]["error"] = str(e)
+        
+        # Prometheus-style metrics
+        try:
+            from ..utils.metrics import get_all_metrics
+            metrics["prometheus"] = get_all_metrics()
+        except Exception as e:
+            logger.warning(f"Failed to collect Prometheus metrics: {e}")
+            metrics["prometheus"]["error"] = str(e)
         
         return JSONResponse(metrics)
         

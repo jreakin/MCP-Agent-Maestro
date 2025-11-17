@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent-MCP CLI: Command-line interface for multi-agent collaboration.
+MCP Agent Maestro CLI: Command-line interface for multi-agent collaboration.
 
 Copyright (C) 2025 Luis Alejandro Rincon (rinadelph)
 
@@ -52,7 +52,7 @@ def ensure_env_file_simple(project_dir=None):
     if not env_path.exists():
         print(f"Creating default .env file at: {env_path}")
         
-        default_env_content = """# Agent-MCP Configuration
+        default_env_content = """# MCP Agent Maestro Configuration
 # This file was automatically generated. Edit as needed.
 
 # API & Server Configuration
@@ -410,7 +410,10 @@ def verify_config(client: str):
 @click.group(context_settings=dict(help_option_names=["-h", "--help"]))
 @click.pass_context
 def main_group(ctx: click.Context):
-    """Agent-MCP CLI - Multi-agent collaboration framework."""
+    """MCP Agent Maestro CLI - Multi-agent collaboration framework.
+    
+    Orchestrating AI Agents Like a Symphony.
+    """
     # Ensure context object exists
     ctx.ensure_object(dict)
 
@@ -496,7 +499,7 @@ def start_server(
     no_index: bool,
 ):
     """
-    Main Command-Line Interface for starting the MCP Server.
+    Main Command-Line Interface for starting the MCP Agent Maestro Server.
 
     The server supports two embedding modes:
     - Simple mode (default): Uses text-embedding-3-large (1536 dimensions) - indexes markdown files and context

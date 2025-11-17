@@ -1,5 +1,5 @@
 """
-Centralized error handling utilities for Agent-MCP.
+Centralized error handling utilities for MCP Agent Maestro.
 Provides custom exceptions and consistent error response formatting.
 """
 from typing import Dict, Any, Optional
@@ -11,46 +11,109 @@ from ..core.config import logger
 
 
 # Custom Exception Classes
-class AgentMCPError(Exception):
-    """Base exception for Agent-MCP errors."""
+class MaestroException(Exception):
+    """Base exception for MCP Agent Maestro errors.
+    
+    All Maestro-specific exceptions inherit from this base class. It provides
+    structured error information including status codes and contextual details
+    for better debugging and error handling.
+    
+    Attributes:
+        message: Human-readable error message
+        status_code: HTTP status code (default: 500)
+        details: Dictionary with additional context for debugging
+    """
     def __init__(self, message: str, status_code: int = 500, details: Optional[Dict[str, Any]] = None):
         self.message = message
         self.status_code = status_code
         self.details = details or {}
+        # Add timestamp for debugging
+        import time
+        if "timestamp" not in self.details:
+            self.details["timestamp"] = time.time()
         super().__init__(self.message)
 
 
-class DatabaseError(AgentMCPError):
+# Backward compatibility alias
+AgentMCPError = MaestroException
+
+
+class AgentOrchestrationError(MaestroException):
+    """Raised when agent coordination fails.
+    
+    This exception is raised when the Maestro orchestrator fails to coordinate
+    multiple agents, manage agent lifecycle, or handle inter-agent communication.
+    
+    Attributes:
+        message: Human-readable error message
+        details: Dictionary with additional context (agent_ids, operation, etc.)
+        status_code: HTTP status code (500 for server errors)
+    """
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        if details is None:
+            details = {}
+        # Add debugging context
+        if "operation" not in details:
+            details["operation"] = "agent_orchestration"
+        if "error_type" not in details:
+            details["error_type"] = "AgentOrchestrationError"
+        super().__init__(message, status_code=500, details=details)
+
+
+class TaskPlacementError(MaestroException):
+    """Raised when task assignment fails.
+    
+    This exception is raised when the Maestro cannot assign a task to an agent,
+    such as when all agents are busy, no suitable agent exists, or task
+    validation fails.
+    
+    Attributes:
+        message: Human-readable error message
+        details: Dictionary with additional context (task_id, agent_id, reason, etc.)
+        status_code: HTTP status code (500 for server errors)
+    """
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        if details is None:
+            details = {}
+        # Add debugging context
+        if "operation" not in details:
+            details["operation"] = "task_placement"
+        if "error_type" not in details:
+            details["error_type"] = "TaskPlacementError"
+        super().__init__(message, status_code=500, details=details)
+
+
+class DatabaseError(MaestroException):
     """Database operation errors."""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, status_code=500, details=details)
 
 
-class ValidationError(AgentMCPError):
+class ValidationError(MaestroException):
     """Data validation errors."""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, status_code=400, details=details)
 
 
-class SecurityError(AgentMCPError):
+class SecurityError(MaestroException):
     """Security-related errors."""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, status_code=403, details=details)
 
 
-class NotFoundError(AgentMCPError):
+class NotFoundError(MaestroException):
     """Resource not found errors."""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, status_code=404, details=details)
 
 
-class AuthenticationError(AgentMCPError):
+class AuthenticationError(MaestroException):
     """Authentication errors."""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, status_code=401, details=details)
 
 
-class ConflictError(AgentMCPError):
+class ConflictError(MaestroException):
     """Resource conflict errors (e.g., duplicate entries)."""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, status_code=409, details=details)
@@ -82,8 +145,8 @@ def format_error_response(
     if request_id:
         response["request_id"] = request_id
     
-    # Add details if it's an AgentMCPError
-    if isinstance(error, AgentMCPError):
+    # Add details if it's a MaestroException (or backward compat AgentMCPError)
+    if isinstance(error, (MaestroException, AgentMCPError)):
         response["error"] = error.message
         response["status_code"] = error.status_code
         if error.details:
@@ -169,7 +232,7 @@ async def error_handler_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
         return response
-    except AgentMCPError as e:
+    except (MaestroException, AgentMCPError) as e:
         log_error(e, request=request)
         return create_error_response(e, include_traceback=False)
     except Exception as e:

@@ -1,4 +1,4 @@
-# Agent-MCP/mcp_template/mcp_server_src/app/server_lifecycle.py
+# MCP Agent Maestro - Server lifecycle management
 import os
 import json
 import datetime
@@ -55,7 +55,7 @@ def ensure_env_file(project_dir: Optional[Path] = None) -> Path:
         print(f"Creating default .env file at: {env_path}")
         
         # Default .env content with sensible defaults
-        default_env_content = """# Agent-MCP Configuration
+        default_env_content = """# MCP Agent Maestro Configuration
 # This file was automatically generated. Edit as needed.
 
 # API & Server Configuration

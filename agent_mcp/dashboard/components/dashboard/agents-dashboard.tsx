@@ -37,12 +37,23 @@ const StatusDot = React.memo(({ status }: { status: Agent['status'] }) => {
 })
 
 const AgentTypeIcon = React.memo(({ agentId }: { agentId: string }) => {
+  // Musical instrument metaphors for Maestro theme:
+  // Conductor = Shield (Maestro/conductor)
+  // Frontend = Terminal (🎻 Violin)
+  // Backend = Cpu (🎺 Trumpet)
+  // Database = Database (🎹 Piano)
+  // Security = Shield (🛡️ Guardian)
+  // Testing = Cpu (🥁 Drums)
+  // TODO: Replace with actual musical instrument icons (🎻🎺🎹🥁🎸)
   const getIcon = () => {
-    if (agentId.includes('admin')) return Shield
-    if (agentId.includes('worker')) return Cpu
-    if (agentId.includes('analysis')) return Database
-    if (agentId.includes('security')) return Shield
-    return Terminal
+    const lowerId = agentId.toLowerCase()
+    if (lowerId.includes('conductor') || lowerId.includes('admin')) return Shield // 👨‍🎤 Maestro
+    if (lowerId.includes('frontend') || lowerId.includes('ui')) return Terminal // 🎻 Violin
+    if (lowerId.includes('backend') || lowerId.includes('api') || lowerId.includes('worker')) return Cpu // 🎺 Trumpet
+    if (lowerId.includes('database') || lowerId.includes('db') || lowerId.includes('analysis')) return Database // 🎹 Piano
+    if (lowerId.includes('security') || lowerId.includes('guardian')) return Shield // 🛡️ Guardian
+    if (lowerId.includes('test') || lowerId.includes('qa')) return Cpu // 🥁 Drums
+    return Terminal // Default: 🎻 Violin (Frontend agent)
   }
   
   const Icon = getIcon()
@@ -494,8 +505,8 @@ export function AgentsDashboard() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-fluid-2xl font-bold text-foreground">Agent Fleet</h1>
-          <p className="text-muted-foreground text-fluid-base mt-1">Monitor and manage autonomous agents</p>
+          <h1 className="text-fluid-2xl font-bold text-foreground">🎭 Maestro Orchestra</h1>
+          <p className="text-muted-foreground text-fluid-base mt-1">Conduct and monitor your AI agents like a symphony</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Badge variant="outline" className="text-xs bg-primary/15 text-primary border-primary/30 font-medium">
