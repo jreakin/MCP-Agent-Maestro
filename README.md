@@ -1,22 +1,20 @@
 # 🎭 MCP Agent Maestro
 
+![Agent MCP Maestro Logo](/assets/images/agent-mcp-maestro-banner.png)
+
+
+---
+
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](https://opensource.org/licenses/AGPL-3.0)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://github.com/jreakin/mcp-agent-maestro/workflows/Tests/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions)
 
 > **Orchestrating AI Agents Like a Symphony** 🎵
 
-<div align="center">
-  <img src="assets/images/maestro-logo.png" alt="MCP Agent Maestro" width="400">
-</div>
-
 **MCP Agent Maestro** is a sophisticated multi-agent orchestration framework that coordinates specialized AI agents to work harmoniously on complex software development tasks. Like a conductor leading an orchestra, Maestro ensures each agent performs its part at the right time, creating a seamless development experience.
 
 > 📦 **Fork Information**: This is a fork of [Agent-MCP](https://github.com/rinadelph/Agent-MCP) created by John R. Eakin ([github.com/jreakin](https://github.com/jreakin)). For the original project, visit the [Agent-MCP repository](https://github.com/rinadelph/Agent-MCP).
 
-<div align="center">
-  <img src="assets/images/agent-network-viz.png" alt="Agent Network Visualization" width="600">
-</div>
 
 ## 🎼 The Maestro Philosophy
 
