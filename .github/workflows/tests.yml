@@ -81,21 +81,38 @@ jobs:
     - name: Run tests with coverage
       id: test_coverage
       run: |
+        set +e  # Don't fail on errors, we'll handle them below
         uv run pytest tests/ --ignore=tests/benchmarks --cov=agent_mcp --cov-report=xml --cov-report=html --cov-report=term -v --tb=short | tee pytest_output.txt
-        # Extract test statistics (using sed instead of perl regex for compatibility)
-        PASSED=$(grep -oE '[0-9]+ passed' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
-        FAILED=$(grep -oE '[0-9]+ failed' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
-        SKIPPED=$(grep -oE '[0-9]+ skipped' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
+        TEST_EXIT_CODE=${PIPESTATUS[0]}
+        
+        # Extract test statistics (handle different pytest output formats)
+        PASSED=$(grep -iE '[0-9]+ passed' pytest_output.txt | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+        FAILED=$(grep -iE '[0-9]+ failed' pytest_output.txt | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+        SKIPPED=$(grep -iE '[0-9]+ skipped' pytest_output.txt | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+        
+        # If we can't find the format, try summary line format
+        if [ "$PASSED" = "0" ] && [ "$FAILED" = "0" ] && [ "$SKIPPED" = "0" ]; then
+          SUMMARY=$(grep -iE 'passed|failed|skipped' pytest_output.txt | tail -1 || echo "")
+          if [ -n "$SUMMARY" ]; then
+            PASSED=$(echo "$SUMMARY" | grep -oE '[0-9]+' | head -1 || echo "0")
+            FAILED=$(echo "$SUMMARY" | grep -oE '[0-9]+' | head -2 | tail -1 || echo "0")
+            SKIPPED=$(echo "$SUMMARY" | grep -oE '[0-9]+' | tail -1 || echo "0")
+          fi
+        fi
+        
         # Total is sum of all test results
         TOTAL=$((PASSED + FAILED + SKIPPED))
-        if [ "$TOTAL" -eq 0 ]; then
-          # Fallback: try to extract from different format
-          TOTAL=$(grep -oE '[0-9]+ passed' pytest_output.txt | grep -oE '[0-9]+' | head -1 || echo "0")
-        fi
+        
         echo "passed=$PASSED" >> $GITHUB_OUTPUT
         echo "failed=$FAILED" >> $GITHUB_OUTPUT
         echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
         echo "total=$TOTAL" >> $GITHUB_OUTPUT
+        
+        # Show extracted values for debugging
+        echo "Extracted test stats: passed=$PASSED, failed=$FAILED, skipped=$SKIPPED, total=$TOTAL"
+        
+        # Exit with pytest's exit code (fail the step if tests failed)
+        exit $TEST_EXIT_CODE
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-test123456789012345678901234567890' }}
         EMBEDDING_PROVIDER: ollama

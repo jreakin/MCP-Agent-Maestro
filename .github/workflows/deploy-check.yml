@@ -100,9 +100,16 @@ jobs:
     
     - name: Start API server in background
       run: |
-        uv run -m agent_mcp.cli start --port 8080 --project-dir /tmp/test-project --no-tui &
+        uv run -m agent_mcp.cli start --port 8080 --project-dir /tmp/test-project --no-tui > api_server.log 2>&1 &
         echo $! > api_server.pid
-        sleep 10  # Wait for server to start
+        echo "API server PID: $(cat api_server.pid)"
+        sleep 15  # Wait for server to start
+        # Check if process is still running
+        if ! ps -p $(cat api_server.pid) > /dev/null 2>&1; then
+          echo "API server process died! Logs:"
+          cat api_server.log
+          exit 1
+        fi
       env:
         AGENT_MCP_DB_HOST: localhost
         AGENT_MCP_DB_PORT: 5432
@@ -128,10 +135,17 @@ jobs:
           fi
           attempt=$((attempt + 1))
           echo "Waiting for API to be healthy... (attempt $attempt/$max_attempts)"
+          # Show server logs if available
+          if [ -f api_server.log ]; then
+            echo "Last 20 lines of server log:"
+            tail -20 api_server.log
+          fi
           sleep 2
         done
         if [ $attempt -eq $max_attempts ]; then
           echo "API health check failed after $max_attempts attempts"
+          echo "Full server log:"
+          cat api_server.log 2>/dev/null || echo "No server log found"
           exit 1
         fi
         curl -s http://localhost:8080/health | jq .
