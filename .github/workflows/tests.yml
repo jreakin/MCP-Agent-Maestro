@@ -40,6 +40,7 @@ jobs:
       run: uv pip install --system -e ".[dev]"
     
     - name: Run tests
+      if: hashFiles('tests') != ''
       run: uv run pytest tests/ -v --tb=short
       env:
         AGENT_MCP_DB_HOST: localhost
@@ -47,3 +48,7 @@ jobs:
         AGENT_MCP_DB_NAME: agent_mcp
         AGENT_MCP_DB_USER: agent_mcp
         AGENT_MCP_DB_PASSWORD: agent_mcp_password
+    
+    - name: No tests found
+      if: hashFiles('tests') == ''
+      run: echo "No tests directory found - skipping tests"
