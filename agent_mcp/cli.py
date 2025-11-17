@@ -432,11 +432,7 @@ main_group.add_command(mcp_setup_group)
 @click.option(
     "--port",
     type=int,
-<<<<<<< HEAD
     default=os.environ.get("PORT", 3000),  # Read from env var PORT if set, else 3000
-=======
-    default=lambda: get_settings().api_port,  # Read from settings
->>>>>>> feature/port-3000-default
     show_default=True,
     help="Port to listen on for SSE and HTTP dashboard.",
 )
