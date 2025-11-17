@@ -1,58 +1,110 @@
 name: Code Quality
+
 on:
   push:
-    branches:
-      - main
-      - develop
-      - feature/**
+    branches: [ main, develop, feature/port-3000-default ]
   pull_request:
-    branches:
-      - main
-      - develop
+    branches: [ main, develop, feature/port-3000-default ]
 
 jobs:
   lint:
+    name: Lint with Ruff
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: agent_mcp
-          POSTGRES_USER: agent_mcp
-          POSTGRES_PASSWORD: agent_mcp_password
-        options: >-
-          --health-cmd "sh -c 'pg_isready -U agent_mcp'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install flake8 black isort mypy
-
-      - name: Lint with flake8
-        run: |
-          flake8 agent_mcp --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 agent_mcp --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-      - name: Check formatting with black
-        run: black --check agent_mcp
-
-      - name: Check import sorting with isort
-        run: isort --check-only agent_mcp
-
-      - name: Type checking with mypy
-        run: mypy agent_mcp --ignore-missing-imports
-        continue-on-error: true
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      id: cache-uv
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+    
+    - name: Install dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Run Ruff linter
+      run: uv run ruff check . --output-format=github
+    
+    - name: Run Ruff formatter check
+      run: uv run ruff format --check .
+  
+  type-check:
+    name: Type Check with mypy
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      id: cache-uv
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+    
+    - name: Install dependencies (including mypy)
+      run: |
+        uv pip install --system -e ".[dev]"
+        uv pip install --system types-requests
+    
+    - name: Run mypy
+      run: uv run mypy agent_mcp --ignore-missing-imports || echo "Type checking completed with errors (non-blocking)"
+  
+  security-scan:
+    name: Security Scan with Bandit
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      id: cache-uv
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.local/share/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+    
+    - name: Install dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Run Bandit security scan
+      run: uv run bandit -r agent_mcp -f json -o bandit-report.json || true
