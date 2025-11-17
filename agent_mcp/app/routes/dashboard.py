@@ -118,9 +118,9 @@ async def node_details_api_route(request: Request) -> JSONResponse:
             elif node_type_from_id == 'context':
                 cursor.execute("SELECT * FROM project_context WHERE context_key = %s", (actual_id_from_node,))
                 row = cursor.fetchone()
-                if row: details['data'] = dict(row)
+                if row: details['data'] = serialize_datetime(dict(row))
                 cursor.execute("SELECT timestamp, agent_id, action_type FROM agent_actions WHERE (action_type = 'updated_context' OR action_type = 'update_project_context') AND details LIKE %s ORDER BY timestamp DESC LIMIT 5", (f'%"{actual_id_from_node}"%',))
-                details['actions'] = [dict(r) for r in cursor.fetchall()]
+                details['actions'] = [serialize_datetime(dict(r)) for r in cursor.fetchall()]
             elif node_type_from_id == 'file':
                 details['data'] = {'filepath': actual_id_from_node, 'info': g.file_map.get(actual_id_from_node, {})}
                 cursor.execute("SELECT timestamp, agent_id, action_type, details FROM agent_actions WHERE (action_type LIKE '%_file' OR action_type LIKE 'claim_file_%' OR action_type = 'release_file') AND details LIKE %s ORDER BY timestamp DESC LIMIT 5", (f'%"{actual_id_from_node}"%',))
