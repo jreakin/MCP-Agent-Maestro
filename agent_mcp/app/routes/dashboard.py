@@ -1,5 +1,6 @@
 """Dashboard API endpoints."""
 import datetime
+import json
 from typing import List, Dict, Any
 
 from starlette.routing import Route
@@ -34,6 +35,21 @@ from ...tools.admin_tools import (
     terminate_agent_tool_impl
 )
 import mcp.types as mcp_types
+
+
+def serialize_datetime(obj: Any) -> Any:
+    """Convert datetime objects to ISO format strings for JSON serialization."""
+    if isinstance(obj, datetime.datetime):
+        return obj.isoformat()
+    elif isinstance(obj, datetime.date):
+        return obj.isoformat()
+    elif isinstance(obj, datetime.time):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: serialize_datetime(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_datetime(item) for item in obj]
+    return obj
 
 
 @api_route()
@@ -88,17 +104,17 @@ async def node_details_api_route(request: Request) -> JSONResponse:
             if node_type_from_id == 'agent':
                 cursor.execute("SELECT * FROM agents WHERE agent_id = %s", (actual_id_from_node,))
                 row = cursor.fetchone()
-                if row: details['data'] = dict(row)
+                if row: details['data'] = serialize_datetime(dict(row))
                 cursor.execute("SELECT timestamp, action_type, task_id, details FROM agent_actions WHERE agent_id = %s ORDER BY timestamp DESC LIMIT 10", (actual_id_from_node,))
-                details['actions'] = [dict(r) for r in cursor.fetchall()]
+                details['actions'] = [serialize_datetime(dict(r)) for r in cursor.fetchall()]
                 cursor.execute("SELECT task_id, title, status, priority FROM tasks WHERE assigned_to = %s ORDER BY created_at DESC LIMIT 10", (actual_id_from_node,))
-                details['related']['assigned_tasks'] = [dict(r) for r in cursor.fetchall()]
+                details['related']['assigned_tasks'] = [serialize_datetime(dict(r)) for r in cursor.fetchall()]
             elif node_type_from_id == 'task':
                 cursor.execute("SELECT * FROM tasks WHERE task_id = %s", (actual_id_from_node,))
                 row = cursor.fetchone()
-                if row: details['data'] = dict(row)
+                if row: details['data'] = serialize_datetime(dict(row))
                 cursor.execute("SELECT timestamp, agent_id, action_type, details FROM agent_actions WHERE task_id = %s ORDER BY timestamp DESC LIMIT 10", (actual_id_from_node,))
-                details['actions'] = [dict(r) for r in cursor.fetchall()]
+                details['actions'] = [serialize_datetime(dict(r)) for r in cursor.fetchall()]
             elif node_type_from_id == 'context':
                 cursor.execute("SELECT * FROM project_context WHERE context_key = %s", (actual_id_from_node,))
                 row = cursor.fetchone()
@@ -132,7 +148,9 @@ async def agents_list_api_route(request: Request) -> JSONResponse:
                 'created_at': 'N/A', 'current_task': 'N/A'
             })
             cursor.execute("SELECT agent_id, status, color, created_at, current_task FROM agents ORDER BY created_at DESC")
-            for row in cursor.fetchall(): agents_list_data.append(dict(row))
+            for row in cursor.fetchall(): 
+                agent_dict = serialize_datetime(dict(row))
+                agents_list_data.append(agent_dict)
     except Exception as e:
         logger.error(f"Error fetching agents list: {e}", exc_info=True)
         return JSONResponse({'error': f'Failed to fetch agents list: {str(e)}'}, status_code=500)
@@ -156,7 +174,7 @@ async def all_tasks_api_route(request: Request) -> JSONResponse:
         with db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM tasks ORDER BY created_at DESC")
-            tasks_data = [dict(row) for row in cursor.fetchall()]
+            tasks_data = [serialize_datetime(dict(row)) for row in cursor.fetchall()]
             return JSONResponse(tasks_data)
     except Exception as e:
         log_error(e, context={"operation": "fetch_all_tasks"}, request=request)
@@ -369,6 +387,8 @@ async def all_data_api_route(request: Request) -> JSONResponse:
                         break
                 
                 agent_dict['auth_token'] = agent_token
+                # Serialize datetime fields
+                agent_dict = serialize_datetime(agent_dict)
                 agents_data.append(agent_dict)
             
             agents_data.insert(0, {
@@ -380,20 +400,20 @@ async def all_data_api_route(request: Request) -> JSONResponse:
             })
             
             cursor.execute("SELECT * FROM tasks ORDER BY created_at DESC")
-            tasks_data = [dict(row) for row in cursor.fetchall()]
+            tasks_data = [serialize_datetime(dict(row)) for row in cursor.fetchall()]
             
             cursor.execute("SELECT * FROM project_context ORDER BY last_updated DESC")
-            context_data = [dict(row) for row in cursor.fetchall()]
+            context_data = [serialize_datetime(dict(row)) for row in cursor.fetchall()]
             
             cursor.execute("""
                 SELECT * FROM agent_actions 
                 ORDER BY timestamp DESC 
                 LIMIT 100
             """)
-            actions_data = [dict(row) for row in cursor.fetchall()]
+            actions_data = [serialize_datetime(dict(row)) for row in cursor.fetchall()]
             
             cursor.execute("SELECT * FROM file_metadata")
-            file_metadata = [dict(row) for row in cursor.fetchall()]
+            file_metadata = [serialize_datetime(dict(row)) for row in cursor.fetchall()]
             
             response_data = {
                 "agents": agents_data,
@@ -401,7 +421,7 @@ async def all_data_api_route(request: Request) -> JSONResponse:
                 "context": context_data,
                 "actions": actions_data,
                 "file_metadata": file_metadata,
-                "file_map": g.file_map,
+                "file_map": serialize_datetime(g.file_map),
                 "admin_token": g.admin_token,
                 "timestamp": datetime.datetime.now().isoformat()
             }
