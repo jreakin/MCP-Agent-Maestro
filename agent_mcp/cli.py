@@ -23,42 +23,141 @@ import anyio  # For running async functions and task groups
 import os
 import sys
 import json
-import sqlite3
+import psycopg2
 from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv, dotenv_values
 
 # Load environment variables before importing other modules
-# Try explicit paths
+# First, ensure .env file exists (will be created with defaults if missing)
+# Import ensure_env_file from a separate utility to avoid circular imports
+def ensure_env_file_simple(project_dir=None):
+    """Simple version of ensure_env_file that doesn't require logger."""
+    from pathlib import Path
+    
+    if project_dir:
+        env_path = Path(project_dir) / ".env"
+    else:
+        # Search for .env in current directory and up to 3 parent directories
+        current = Path.cwd()
+        for level in range(4):
+            candidate = current / (".." * level) / ".env"
+            candidate = candidate.resolve()
+            if candidate.exists():
+                return candidate
+        # If not found, create in current directory
+        env_path = Path.cwd() / ".env"
+    
+    # Create .env file if it doesn't exist
+    if not env_path.exists():
+        print(f"Creating default .env file at: {env_path}")
+        
+        default_env_content = """# Agent-MCP Configuration
+# This file was automatically generated. Edit as needed.
 
-# Get the directory of the current script
-script_dir = Path(__file__).resolve().parent
+# API & Server Configuration
+AGENT_MCP_API_HOST=localhost
+AGENT_MCP_API_PORT=8080
+AGENT_MCP_DASHBOARD_PORT=3000
 
-# Try parent directories
-for parent_level in range(3):  # Go up to 3 levels
-    env_path = script_dir / (".." * parent_level) / ".env"
-    env_path = env_path.resolve()
-    print(f"Trying to load .env from: {env_path}")
-    if env_path.exists():
-        print(f"Found .env at: {env_path}")
-        env_vars = dotenv_values(str(env_path))
-        print(f"Loaded variables: {list(env_vars.keys())}")
-        print(
-            f"OPENAI_API_KEY from file: {env_vars.get('OPENAI_API_KEY', 'NOT FOUND')[:10]}..."
-        )
-        # Manually set the environment variables
-        for key, value in env_vars.items():
-            os.environ[key] = value
-        # Check if API key was set (without logging the actual key)
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if api_key:
-            print("OPENAI_API_KEY successfully loaded from environment")
-        else:
-            print("OPENAI_API_KEY not found in environment")
-        break
+# Database Configuration
+# For Docker: use 'postgres' as host, for local: use 'localhost'
+AGENT_MCP_DB_HOST=localhost
+AGENT_MCP_DB_PORT=5432
+AGENT_MCP_DB_NAME=agent_mcp
+AGENT_MCP_DB_USER=agent_mcp
+AGENT_MCP_DB_PASSWORD=
+AGENT_MCP_DB_POOL_MIN=1
+AGENT_MCP_DB_POOL_MAX=10
 
-# Also try normal load_dotenv in case
+# OpenAI Configuration (optional - leave empty if using Ollama)
+# AGENT_MCP_OPENAI_API_KEY=sk-your-api-key-here
+AGENT_MCP_OPENAI_MODEL=gpt-4.1-2025-04-14
+AGENT_MCP_EMBEDDING_MODEL=text-embedding-3-large
+AGENT_MCP_EMBEDDING_DIMENSION=1536
+
+# Embedding Provider (openai or ollama)
+# Set to 'ollama' to use local Ollama models instead of OpenAI
+EMBEDDING_PROVIDER=openai
+
+# Ollama Configuration (if using EMBEDDING_PROVIDER=ollama)
+# OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+# OLLAMA_CHAT_MODEL=llama3.2
+
+# Security Configuration
+AGENT_MCP_SECURITY_ENABLED=true
+AGENT_MCP_SECURITY_POISON_DETECTION_ENABLED=true
+AGENT_MCP_SECURITY_SCAN_TOOL_SCHEMAS=true
+AGENT_MCP_SECURITY_SCAN_TOOL_RESPONSES=true
+AGENT_MCP_SECURITY_SANITIZATION_MODE=remove
+
+# RAG Configuration
+AGENT_MCP_RAG_ENABLED=true
+AGENT_MCP_RAG_MAX_RESULTS=13
+AGENT_MCP_DISABLE_AUTO_INDEXING=false
+
+# Logging Configuration
+AGENT_MCP_LOG_LEVEL=INFO
+AGENT_MCP_MCP_DEBUG=false
+AGENT_MCP_LOG_FILE=mcp_server.log
+
+# Agent Management
+AGENT_MCP_MAX_WORKERS=5
+AGENT_MCP_AGENT_TIMEOUT=3600
+
+# Task Analysis
+AGENT_MCP_TASK_ANALYSIS_MODEL=gpt-4.1-2025-04-14
+AGENT_MCP_TASK_ANALYSIS_MAX_TOKENS=1000000
+
+# Task Placement
+AGENT_MCP_ENABLE_TASK_PLACEMENT_RAG=true
+AGENT_MCP_TASK_DUPLICATION_THRESHOLD=0.8
+AGENT_MCP_ALLOW_RAG_OVERRIDE=true
+AGENT_MCP_TASK_PLACEMENT_RAG_TIMEOUT=5
+"""
+        
+        try:
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write(default_env_content)
+            print(f"Created default .env file at: {env_path}")
+        except Exception as e:
+            print(f"Warning: Failed to create .env file at {env_path}: {e}. Continuing with environment variables only.")
+    else:
+        print(f"Using existing .env file at: {env_path}")
+    
+    return env_path
+
+# Ensure .env file exists in current or parent directories
+env_file = ensure_env_file_simple()
+print(f"Using .env file at: {env_file}")
+
+# Load environment variables from .env file
+load_dotenv(dotenv_path=str(env_file))
+
+# Also try normal load_dotenv as fallback
 load_dotenv()
+
+# Check if API key was set (without logging the actual key)
+try:
+    settings = get_settings()
+    api_key = (
+        settings.openai_api_key.get_secret_value() 
+        if settings.openai_api_key is not None 
+        else None
+    )
+    if api_key:
+        print("OPENAI_API_KEY successfully loaded from environment")
+    else:
+        embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+        if embedding_provider == "ollama":
+            print("Using Ollama for embeddings (no OpenAI API key needed)")
+        else:
+            print("OPENAI_API_KEY not found in environment (optional if using Ollama)")
+except Exception:
+    # Settings not yet available, skip check
+    pass
 
 # Project-specific imports
 # Ensure core.config (and thus logging) is initialized early.
@@ -67,6 +166,7 @@ from .core.config import (
     CONSOLE_LOGGING_ENABLED,
     enable_console_logging,
 )  # Logger is initialized in config.py
+from .core.settings import get_settings  # For lambda defaults in click options
 from .core import globals as g  # For g.server_running and other globals
 
 # Import app creation and lifecycle functions
@@ -78,23 +178,28 @@ from .app.server_lifecycle import (
 )  # application_startup is called by create_app's on_startup
 from .tui.display import TUIDisplay  # Import TUI display
 
+# Import setup commands
+try:
+    from .cli_setup import setup, doctor
+except ImportError:
+    # Setup commands are optional
+    setup = None
+    doctor = None
+
+# Import database connection utilities
+from .db import get_db_connection, return_connection
+
 
 def get_admin_token_from_db(project_dir: str) -> Optional[str]:
-    """Get the admin token from the SQLite database."""
+    """Get the admin token from the PostgreSQL database."""
+    conn = None
     try:
-        # Construct the path to the database
-        db_path = Path(project_dir).resolve() / ".agent" / "mcp_state.db"
-
-        if not db_path.exists():
-            return None
-
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         # Get the admin token from project_context table
         cursor.execute(
-            "SELECT value FROM project_context WHERE context_key = ?",
+            "SELECT value FROM project_context WHERE context_key = %s",
             ("config_admin_token",),
         )
         row = cursor.fetchone()
@@ -107,20 +212,224 @@ def get_admin_token_from_db(project_dir: str) -> Optional[str]:
             except json.JSONDecodeError:
                 pass
 
-        conn.close()
+        return None
+    except psycopg2.Error as e:
+        logger.error(f"Database error reading admin token: {e}", exc_info=True)
         return None
     except Exception as e:
         logger.error(f"Error reading admin token from database: {e}")
         return None
+    finally:
+        if conn:
+            return_connection(conn)
+
+
+# Import MCP setup utilities
+from .api.mcp_setup import MCPConfigGenerator, MCPConfigInstaller, MCPConfigVerifier, ClientType
+
+
+# --- MCP Setup Command Group ---
+@click.group(name="mcp-setup", help="MCP client configuration management")
+def mcp_setup_group():
+    """MCP Setup command group."""
+    pass
+
+
+@mcp_setup_group.command(name="show-config", help="Show MCP configuration for a client")
+@click.option(
+    "--client",
+    type=click.Choice(["cursor", "claude", "windsurf", "vscode", "all"], case_sensitive=False),
+    default="all",
+    help="Client to show configuration for"
+)
+@click.option(
+    "--host",
+    type=str,
+    default="localhost",
+    help="MCP server host"
+)
+@click.option(
+    "--port",
+    type=int,
+    default=8080,
+    help="MCP server port"
+)
+@click.option(
+    "--command",
+    type=str,
+    default="agent-mcp",
+    help="Command to run MCP server"
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(["json", "shell", "both"], case_sensitive=False),
+    default="json",
+    help="Output format"
+)
+@click.option(
+    "--save-to-file",
+    type=click.Path(file_okay=True, dir_okay=False, writable=True),
+    default=None,
+    help="Save configuration to file"
+)
+def show_config(client: str, host: str, port: int, command: str, output_format: str, save_to_file: Optional[str]):
+    """Show MCP configuration for specified client(s)."""
+    generator = MCPConfigGenerator(host=host, port=port, command=command)
+    
+    clients = ["cursor", "claude", "windsurf", "vscode"] if client == "all" else [client.lower()]
+    
+    configs = {}
+    for clt in clients:
+        try:
+            config = generator.generate_config(clt)  # type: ignore
+            configs[clt] = config
+        except Exception as e:
+            click.echo(f"Error generating config for {clt}: {e}", err=True)
+            configs[clt] = None
+    
+    # Output
+    if output_format in ["json", "both"]:
+        output_json = json.dumps(configs if client == "all" else configs.get(client.lower(), {}), indent=2)
+        click.echo(output_json)
+        
+        if save_to_file:
+            with open(save_to_file, "w") as f:
+                f.write(output_json)
+            click.echo(f"Configuration saved to {save_to_file}", err=True)
+    
+    if output_format in ["shell", "both"]:
+        click.echo("\n# Shell environment variables:", err=True)
+        click.echo(f"export MCP_HOST={host}", err=True)
+        click.echo(f"export MCP_PORT={port}", err=True)
+        click.echo(f"export MCP_COMMAND={command}", err=True)
+
+
+@mcp_setup_group.command(name="install", help="Install MCP configuration to a client")
+@click.option(
+    "--client",
+    type=click.Choice(["cursor", "claude", "windsurf", "vscode"], case_sensitive=False),
+    required=True,
+    help="Client to install configuration for"
+)
+@click.option(
+    "--host",
+    type=str,
+    default="localhost",
+    help="MCP server host"
+)
+@click.option(
+    "--port",
+    type=int,
+    default=8080,
+    help="MCP server port"
+)
+@click.option(
+    "--command",
+    type=str,
+    default="agent-mcp",
+    help="Command to run MCP server"
+)
+@click.option(
+    "--no-backup",
+    is_flag=True,
+    default=False,
+    help="Don't create backup of existing configuration"
+)
+def install_config(client: str, host: str, port: int, command: str, no_backup: bool):
+    """Install MCP configuration to specified client."""
+    generator = MCPConfigGenerator(host=host, port=port, command=command)
+    installer = MCPConfigInstaller()
+    
+    try:
+        # Generate config
+        config = generator.generate_config(client)  # type: ignore
+        
+        # Install config
+        result = installer.install(client, config, backup=not no_backup)  # type: ignore
+        
+        if result["success"]:
+            click.echo(f"✅ Configuration installed to {result['path']}")
+            if result.get("backup_path"):
+                click.echo(f"📦 Backup created at {result['backup_path']}")
+        else:
+            click.echo(f"❌ Failed to install configuration: {result.get('error', 'Unknown error')}", err=True)
+            sys.exit(1)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        sys.exit(1)
+
+
+@mcp_setup_group.command(name="verify", help="Verify MCP client configurations")
+@click.option(
+    "--client",
+    type=click.Choice(["cursor", "claude", "windsurf", "vscode", "all"], case_sensitive=False),
+    default="all",
+    help="Client to verify configuration for"
+)
+def verify_config(client: str):
+    """Verify MCP configurations for specified client(s)."""
+    verifier = MCPConfigVerifier()
+    
+    if client == "all":
+        results = verifier.verify_all()
+        
+        click.echo("MCP Configuration Verification:\n")
+        for clt, result in results.items():
+            if result["exists"]:
+                if result["valid"]:
+                    click.echo(f"✅ {clt}: Configuration valid at {result['path']}")
+                else:
+                    click.echo(f"⚠️  {clt}: Configuration exists but has errors:")
+                    for error in result["errors"]:
+                        click.echo(f"   - {error}")
+            else:
+                click.echo(f"❌ {clt}: Configuration not found")
+                if result["errors"]:
+                    for error in result["errors"]:
+                        click.echo(f"   - {error}")
+    else:
+        result = verifier.verify(client)  # type: ignore
+        
+        if result["exists"]:
+            if result["valid"]:
+                click.echo(f"✅ Configuration valid at {result['path']}")
+                click.echo(f"\nConfiguration:\n{json.dumps(result['config'], indent=2)}")
+            else:
+                click.echo(f"⚠️  Configuration exists but has errors:")
+                for error in result["errors"]:
+                    click.echo(f"   - {error}")
+        else:
+            click.echo(f"❌ Configuration not found")
+            if result["errors"]:
+                for error in result["errors"]:
+                    click.echo(f"   - {error}")
 
 
 # --- Click Command Definition ---
 # This replicates the @click.command and options from the original main.py (lines 1936-1950)
-@click.command(context_settings=dict(help_option_names=["-h", "--help"]))
+@click.group(context_settings=dict(help_option_names=["-h", "--help"]))
+@click.pass_context
+def main_group(ctx: click.Context):
+    """Agent-MCP CLI - Multi-agent collaboration framework."""
+    # Ensure context object exists
+    ctx.ensure_object(dict)
+
+
+# Register setup commands if available
+if setup:
+    main_group.add_command(setup, name="setup")
+if doctor:
+    main_group.add_command(doctor, name="doctor")
+
+# Add mcp-setup group to main group
+main_group.add_command(mcp_setup_group)
+
+
+@main_group.command(name="start", help="Start the MCP server")
 @click.option(
     "--port",
     type=int,
-    default=os.environ.get("PORT", 3000),  # Read from env var PORT if set, else 3000
+    default=lambda: get_settings().api_port,  # Read from settings
     show_default=True,
     help="Port to listen on for SSE and HTTP dashboard.",
 )
@@ -136,7 +445,7 @@ def get_admin_token_from_db(project_dir: str) -> Optional[str]:
     type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, writable=True),
     default=".",
     show_default=True,
-    help="Project directory. The .agent folder will be created/used here. Defaults to current directory.",
+    help="Project directory. The .mcp-maestro folder will be created/used here. Defaults to current directory.",
 )
 @click.option(
     "--admin-token",  # Renamed from admin_token_param for clarity
@@ -148,8 +457,7 @@ def get_admin_token_from_db(project_dir: str) -> Optional[str]:
 @click.option(
     "--debug",
     is_flag=True,
-    default=os.environ.get("MCP_DEBUG", "false").lower()
-    == "true",  # Default from env var
+    default=lambda: get_settings().mcp_debug,  # Default from settings
     help="Enable debug mode for the server (more verbose logging, Starlette debug pages).",
 )
 @click.option(
@@ -176,7 +484,7 @@ def get_admin_token_from_db(project_dir: str) -> Optional[str]:
     default=False,
     help="Disable automatic markdown file indexing. Allows selective manual indexing of specific content into the RAG system.",
 )
-def main_cli(
+def start_server(
     port: int,
     transport: str,
     project_dir: str,
@@ -698,6 +1006,106 @@ def main_cli(
     sys.exit(0)  # Explicitly exit after cleanup if not already exited by SystemExit
 
 
-# This allows running `python -m mcp_server_src.cli --port ...`
+# Add MCP setup group to main group
+main_group.add_command(mcp_setup_group)
+
+# Backwards compatibility: allow direct invocation
+@click.command(context_settings=dict(help_option_names=["-h", "--help"]))
+@click.option(
+    "--port",
+    type=int,
+    default=lambda: get_settings().api_port,
+    show_default=True,
+    help="Port to listen on for SSE and HTTP dashboard.",
+)
+@click.option(
+    "--transport",
+    type=click.Choice(["stdio", "sse"], case_sensitive=False),
+    default="sse",
+    show_default=True,
+    help="Transport type for MCP communication (stdio or sse).",
+)
+@click.option(
+    "--project-dir",
+    type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, writable=True),
+    default=".",
+    show_default=True,
+    help="Project directory. The .mcp-maestro folder will be created/used here. Defaults to current directory.",
+)
+@click.option(
+    "--admin-token",
+    "admin_token_cli",
+    type=str,
+    default=None,
+    help="Admin token for authentication. If not provided, one will be loaded from DB or generated.",
+)
+@click.option(
+    "--debug",
+    is_flag=True,
+    default=lambda: get_settings().mcp_debug,
+    help="Enable debug mode for the server (more verbose logging, Starlette debug pages).",
+)
+@click.option(
+    "--no-tui",
+    is_flag=True,
+    default=False,
+    help="Disable the terminal UI display (logs will still go to file).",
+)
+@click.option(
+    "--advanced",
+    is_flag=True,
+    default=False,
+    help="Enable advanced embeddings mode with larger dimension (3072) and more sophisticated code analysis.",
+)
+@click.option(
+    "--git",
+    is_flag=True,
+    default=False,
+    help="Enable experimental Git worktree support for parallel agent development (advanced users only).",
+)
+@click.option(
+    "--no-index",
+    is_flag=True,
+    default=False,
+    help="Disable automatic markdown file indexing. Allows selective manual indexing of specific content into the RAG system.",
+)
+def main_cli(
+    port: int,
+    transport: str,
+    project_dir: str,
+    admin_token_cli: Optional[str],
+    debug: bool,
+    no_tui: bool,
+    advanced: bool,
+    git: bool,
+    no_index: bool,
+):
+    """Main CLI entry point (backwards compatibility)."""
+    start_server(
+        port=port,
+        transport=transport,
+        project_dir=project_dir,
+        admin_token_cli=admin_token_cli,
+        debug=debug,
+        no_tui=no_tui,
+        advanced=advanced,
+        git=git,
+        no_index=no_index,
+    )
+
+
+# This allows running `python -m agent_mcp.cli --port ...` or `python -m agent_mcp.cli mcp-setup show-config`
 if __name__ == "__main__":
-    main_cli()
+    # Check if command is mcp-setup or start, use group; otherwise use main_cli for backwards compatibility
+    if len(sys.argv) > 1 and sys.argv[1] in ["mcp-setup", "start"]:
+        main_group()
+    else:
+        # Backwards compatibility: if no command specified, assume they want to start the server
+        # Insert "start" as the first argument if no command is given
+        if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+            # If first arg doesn't start with -, it might be a command we don't recognize, use main_cli
+            main_cli()
+        else:
+            # No command given, insert "start" and use group
+            sys.argv.insert(1, "start")
+            main_group()

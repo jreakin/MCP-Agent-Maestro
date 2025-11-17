@@ -8,11 +8,39 @@ export function ApiClientInitializer() {
   const { activeServerId, servers } = useServerStore()
   const [isHydrated, setIsHydrated] = useState(false)
 
-  // Hydrate the store on client side
+  // Hydrate the store on client side and switch to real localStorage storage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      useServerStore.persist.rehydrate()
-      setIsHydrated(true)
+      try {
+        // Switch from no-op storage to real localStorage storage
+        const { createJSONStorage } = require('zustand/middleware')
+        const clientStorage = createJSONStorage(() => {
+          try {
+            return window.localStorage
+          } catch {
+            // Return a no-op if localStorage fails
+            return {
+              getItem: () => null,
+              setItem: () => {},
+              removeItem: () => {},
+              length: 0,
+              clear: () => {},
+              key: () => null,
+            } as any
+          }
+        })
+        
+        // Update storage and rehydrate
+        useServerStore.persist.setOptions({
+          storage: clientStorage
+        })
+        useServerStore.persist.rehydrate()
+        setIsHydrated(true)
+      } catch (e) {
+        // If localStorage fails, continue without persistence
+        console.warn('Failed to initialize localStorage:', e)
+        setIsHydrated(true)
+      }
     }
   }, [])
 

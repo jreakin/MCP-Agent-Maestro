@@ -206,7 +206,13 @@ class ApiClient {
 
   // System endpoints
   async getSystemStatus(): Promise<SystemStatus> {
-    return this.request<SystemStatus>('/status')
+    const response = await this.request<{ success: boolean; data: SystemStatus } | SystemStatus>('/status')
+    // Unwrap the response if it's wrapped in {success, data}
+    if (response && typeof response === 'object' && 'data' in response && 'success' in response) {
+      return (response as { success: boolean; data: SystemStatus }).data
+    }
+    // Otherwise return as-is (for backwards compatibility)
+    return response as SystemStatus
   }
 
   async getGraphData(): Promise<{ nodes: GraphNode[], edges: GraphEdge[] }> {
@@ -272,11 +278,32 @@ class ApiClient {
     return this.request<Task>(`/tasks/${taskId}`)
   }
 
+  async getTaskHistory(taskId: string): Promise<{ history: any[] }> {
+    return this.request<{ history: any[] }>(`/tasks/${taskId}/history`)
+  }
+
   async updateTask(taskId: string, data: Partial<Task>): Promise<{ success: boolean; message: string }> {
     return this.request(`/tasks/${taskId}`, {
       method: 'PUT',
       body: JSON.stringify(data)
     })
+  }
+
+  async deleteTask(taskId: string): Promise<{ success: boolean; message: string }> {
+    return this.request(`/tasks/${taskId}`, {
+      method: 'DELETE'
+    })
+  }
+
+  // Security endpoints
+  async getSecurityAlerts(limit: number = 50): Promise<{ alerts: any[]; count: number }> {
+    const response = await this.request<{ success: boolean; data: { alerts: any[]; count: number } }>(`/security/alerts?limit=${limit}`)
+    return response.success ? response.data : { alerts: [], count: 0 }
+  }
+
+  async getSecurityScanHistory(): Promise<{ scans: any[]; count: number }> {
+    const response = await this.request<{ success: boolean; data: { scans: any[]; count: number } }>('/security/scan-history')
+    return response.success ? response.data : { scans: [], count: 0 }
   }
 
   async createTask(data: {
@@ -285,10 +312,59 @@ class ApiClient {
     priority?: 'low' | 'medium' | 'high'
     assigned_to?: string
     parent_task?: string
+    depends_on_tasks?: string[]
+    tags?: string[]
+    due_date?: string
+    metadata?: Record<string, any>
   }): Promise<{ success: boolean; message: string; task_id?: string }> {
     return this.request('/tasks', {
       method: 'POST',
       body: JSON.stringify(data)
+    })
+  }
+
+  // MCP Setup endpoints
+  async getMCPConfig(client: 'cursor' | 'claude' | 'windsurf' | 'vscode', options?: {
+    host?: string
+    port?: number
+    command?: string
+  }): Promise<{ success: boolean; client: string; config: any }> {
+    return this.request('/mcp/config', {
+      method: 'POST',
+      body: JSON.stringify({
+        client,
+        ...options
+      })
+    })
+  }
+
+  async installMCPConfig(client: 'cursor' | 'claude' | 'windsurf' | 'vscode', options?: {
+    host?: string
+    port?: number
+    command?: string
+    backup?: boolean
+  }): Promise<{ success: boolean; path: string; backup_path?: string; message?: string; error?: string }> {
+    return this.request('/mcp/install', {
+      method: 'POST',
+      body: JSON.stringify({
+        client,
+        ...options
+      })
+    })
+  }
+
+  async verifyMCPConfigs(): Promise<{
+    success: boolean
+    results: Record<string, {
+      exists: boolean
+      valid: boolean
+      path?: string
+      config?: any
+      errors?: string[]
+    }>
+  }> {
+    return this.request('/mcp/verify-all', {
+      method: 'GET'
     })
   }
 
@@ -405,6 +481,18 @@ class ApiClient {
     return this.request('/health')
   }
 
+  // Configuration endpoints
+  async getConfig(): Promise<{ success: boolean; config: Record<string, string>; env_file_path: string }> {
+    return this.request('/config')
+  }
+
+  async updateConfig(updates: Record<string, string>): Promise<{ success: boolean; updated_keys: string[]; message: string }> {
+    return this.request('/config', {
+      method: 'PUT',
+      body: JSON.stringify({ updates })
+    })
+  }
+
   // CORS diagnostic method
   async testCORS(): Promise<boolean> {
     try {
@@ -463,3 +551,15 @@ export function usePolling(intervalMs: number = 10000) {
     staleTime: intervalMs / 2,
   }
 }
+
+// Convenience exports for configuration
+export async function getConfig() {
+  return apiClient.getConfig()
+}
+
+export async function updateConfig(updates: Record<string, string>) {
+  return apiClient.updateConfig(updates)
+}
+
+// Export apiClient as api for backward compatibility
+export const api = apiClient

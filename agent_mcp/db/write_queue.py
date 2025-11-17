@@ -1,6 +1,6 @@
 # Agent-MCP/mcp_template/mcp_server_src/db/write_queue.py
 import asyncio
-import sqlite3
+import psycopg2
 from typing import Any, Callable, Optional, Awaitable
 from ..core.config import logger
 

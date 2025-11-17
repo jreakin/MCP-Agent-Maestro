@@ -12,23 +12,26 @@ from ..core.config import (
 )  # Import get_project_dir for MCP_VERSION if needed
 
 # __version__ was in mcp_template/__init__.py.
-# If MCP_VERSION is needed here, it should ideally be sourced from a single place.
-# For now, let's assume it might come from the main package's __init__ or a dedicated version file.
-# We can hardcode it temporarily or make it configurable.
+# MCP_VERSION is sourced from the main package's __init__.py which reads from pyproject.toml
 try:
     # Attempt to get version from the root __init__.py of agent-mcp
+    # This will read from pyproject.toml via core.config
     from agent_mcp import __version__ as MCP_VERSION
 except ImportError:
-    logger.warning(
-        "Could not import __version__ from agent_mcp. Using default '0.1.0'."
-    )
-    MCP_VERSION = "0.1.0"  # Fallback, matches original main.py:1041
+    # Fallback: try importing directly from config
+    try:
+        from ..core.config import VERSION as MCP_VERSION
+    except ImportError:
+        logger.warning(
+            "Could not import version from agent_mcp. Using default '0.2.0'."
+        )
+        MCP_VERSION = "0.2.0"  # Fallback
 
 
 # Original location: main.py lines 876-929 (init_agent_directory)
 def init_agent_directory(project_dir_str: str) -> Optional[Path]:
     """
-    Initialize the .agent directory structure in the specified project directory.
+    Initialize the .mcp-maestro directory structure in the specified project directory.
     If the directory structure already exists, it verifies it.
     Original main.py: lines 876-929
     """
@@ -59,18 +62,18 @@ def init_agent_directory(project_dir_str: str) -> Optional[Path]:
     ):
         # This warning matches the original behavior.
         logger.warning(
-            f"WARNING: Initializing .agent in the MCP directory itself ({project_path}) or its parent is not recommended!"
+            f"WARNING: Initializing .mcp-maestro in the MCP directory itself ({project_path}) or its parent is not recommended!"
         )
         logger.warning(
             f"Please specify a project directory that is NOT the MCP codebase."
         )
         # Original code proceeded with a warning, so we do the same.
 
-    agent_dir = project_path / ".agent"
+    agent_dir = project_path / ".mcp-maestro"
 
     # Original main.py lines 887-899 (directory list)
     directories_to_create = [
-        "",  # Ensures .agent itself is created
+        "",  # Ensures .mcp-maestro itself is created
         "logs",
         "diffs",
         "notifications",

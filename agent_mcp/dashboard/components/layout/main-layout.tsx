@@ -16,6 +16,8 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   // Initialize theme on mount
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    
     // Set initial theme based on system preference if theme is 'system'
     if (theme === 'system') {
       const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches

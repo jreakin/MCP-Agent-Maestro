@@ -83,6 +83,7 @@ export function GraphSettingsPanel({ onSettingsChange, isOpen, onClose }: GraphS
   
   // Load saved settings on mount
   useEffect(() => {
+    if (typeof window === 'undefined') return
     const saved = localStorage.getItem('graphSettings')
     if (saved) {
       try {
@@ -109,7 +110,9 @@ export function GraphSettingsPanel({ onSettingsChange, isOpen, onClose }: GraphS
   }
 
   const saveSettings = () => {
-    localStorage.setItem('graphSettings', JSON.stringify(settings))
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('graphSettings', JSON.stringify(settings))
+    }
     setHasChanges(false)
   }
 

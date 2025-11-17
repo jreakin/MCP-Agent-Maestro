@@ -17,8 +17,9 @@ import mcp.types as mcp_types # For MCP tool types
 
 # Project-specific imports
 from ..core.config import logger
+from ..core.settings import get_settings
 from ..core import globals as g # For g.connections (if still used for SSE tracking)
-from .routes import routes as http_routes # Import defined HTTP routes
+from .routes import routes as http_routes # Import defined HTTP routes from routes package
 from .server_lifecycle import application_startup, application_shutdown, start_background_tasks
 from ..tools.registry import list_available_tools, dispatch_tool_call
 
@@ -109,8 +110,11 @@ def create_app(project_dir: str, admin_token_cli: Optional[str] = None) -> Starl
         logger.info("Starlette app shutdown complete.")
 
     # Define middleware (if any)
-    # Enable CORS for dashboard integration - comprehensive CORS config
+    # Request ID middleware should be first to ensure all requests have IDs
+    from ..utils.structured_logging import RequestIDMiddleware
+    
     middleware_stack = [
+        Middleware(RequestIDMiddleware),  # Add request IDs to all requests
         Middleware(
             CORSMiddleware,
             allow_origins=[
@@ -158,7 +162,7 @@ def create_app(project_dir: str, admin_token_cli: Optional[str] = None) -> Starl
         on_startup=[on_app_startup], # List of startup handlers
         on_shutdown=[on_app_shutdown], # List of shutdown handlers
         middleware=middleware_stack,
-        debug=os.environ.get("MCP_DEBUG", "false").lower() == "true" # Optional debug mode
+        debug=get_settings().mcp_debug  # Optional debug mode
     )
 
     logger.info("Starlette application instance created with routes and lifecycle events.")

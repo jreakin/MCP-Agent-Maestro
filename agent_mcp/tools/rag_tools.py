@@ -17,6 +17,7 @@ from ..features.rag.query import query_rag_system # Corrected
 async def ask_project_rag_tool_impl(arguments: Dict[str, Any]) -> List[mcp_types.TextContent]:
     agent_auth_token = arguments.get("token")
     query_text = arguments.get("query")
+    format_type = arguments.get("format", "json")  # Support format parameter
 
     requesting_agent_id = get_agent_id(agent_auth_token) # main.py:1575
     if not requesting_agent_id:
@@ -25,15 +26,20 @@ async def ask_project_rag_tool_impl(arguments: Dict[str, Any]) -> List[mcp_types
     if not query_text or not isinstance(query_text, str):
         return [mcp_types.TextContent(type="text", text="Error: query text is required and must be a string.")]
 
+    # Validate format type
+    if format_type not in ["json", "toon"]:
+        format_type = "json"  # Default to JSON if invalid
+
     # Log audit (main.py:1578)
-    log_audit(requesting_agent_id, "ask_project_rag", {"query": query_text})
+    log_audit(requesting_agent_id, "ask_project_rag", {"query": query_text, "format": format_type})
     
-    logger.info(f"Agent '{requesting_agent_id}' is asking project RAG: '{query_text[:100]}...'")
+    logger.info(f"Agent '{requesting_agent_id}' is asking project RAG: '{query_text[:100]}...' (format: {format_type})")
 
     try:
         # Call the core RAG system function from features/rag/query.py
         # This function (query_rag_system) handles all the complex RAG logic.
-        answer_text = await query_rag_system(query_text)
+        # Pass agent_id for context-aware responses and format_type for serialization
+        answer_text = await query_rag_system(query_text, agent_id=requesting_agent_id, format_type=format_type)
         
         # The query_rag_system already handles internal errors and returns a string.
         return [mcp_types.TextContent(type="text", text=answer_text)]
@@ -54,7 +60,8 @@ def register_rag_tools():
             "type": "object",
             "properties": {
                 "token": {"type": "string", "description": "Authentication token for the agent making the query."},
-                "query": {"type": "string", "description": "The natural language question to ask about the project."}
+                "query": {"type": "string", "description": "The natural language question to ask about the project."},
+                "format": {"type": "string", "enum": ["json", "toon"], "default": "json", "description": "Serialization format for response. Use 'toon' for token-efficient format."}
             },
             "required": ["token", "query"],
             "additionalProperties": False

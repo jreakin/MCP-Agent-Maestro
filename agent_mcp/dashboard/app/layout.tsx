@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+
+// Import providers directly - they're already marked "use client" so they'll handle SSR properly
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ApiClientInitializer } from "@/components/providers/api-client-initializer";
 
@@ -15,10 +17,10 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent MCP Dashboard",
+  title: "MCP Maestro Dashboard",
   description: "Premium multi-agent system dashboard with real-time monitoring and control capabilities",
   keywords: ["agent", "mcp", "dashboard", "multi-agent", "ai", "automation"],
-  authors: [{ name: "Agent MCP Team" }],
+  authors: [{ name: "MCP Maestro Team" }],
 };
 
 export const viewport = {
@@ -34,7 +36,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="theme-color" content="#3b82f6" />
+        <meta name="theme-color" content="#BB0000" />
       </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}

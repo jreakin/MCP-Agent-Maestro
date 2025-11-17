@@ -14,10 +14,27 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   useEffect(() => {
     setMounted(true)
     
+    // Hydrate theme from localStorage on mount
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('theme-storage')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          if (parsed?.state?.theme && parsed.state.theme !== theme) {
+            setTheme(parsed.state.theme)
+            return // setTheme will trigger the theme initialization
+          }
+        }
+      } catch (e) {
+        // Ignore localStorage errors
+      }
+    }
+    
     // Initialize theme on mount
     const initializeTheme = () => {
-      const isDark = theme === 'dark' || 
-        (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      const currentTheme = theme
+      const isDark = currentTheme === 'dark' || 
+        (currentTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
       
       if (isDark) {
         document.documentElement.classList.add('dark')

@@ -1,6 +1,6 @@
 # Agent-MCP/mcp_template/mcp_server_src/features/rag/query.py
 import json
-import sqlite3  # For type hinting and error handling
+import psycopg2  # For type hinting and error handling
 from typing import List, Dict, Any, Optional, Tuple
 
 # Imports from our project
@@ -11,7 +11,7 @@ from ...core.config import (
     CHAT_MODEL,
     MAX_CONTEXT_TOKENS,  # From main.py:182
 )
-from ...db.connection import get_db_connection, is_vss_loadable
+from ...db import get_db_connection, db_connection, is_vss_loadable, return_connection
 from ...external.openai_service import get_openai_client
 
 # For OpenAI exceptions
@@ -20,7 +20,12 @@ import openai
 # Original location: main.py lines 1432 - 1566 (ask_project_rag_tool function body)
 
 
-async def query_rag_system(query_text: str) -> str:
+async def query_rag_system(
+    query_text: str,
+    agent_id: Optional[str] = None,
+    agent_context: Optional[Any] = None,
+    format_type: str = "json"
+) -> str:
     """
     Processes a natural language query using the RAG system.
     Fetches relevant context from live data and indexed knowledge,
@@ -28,6 +33,9 @@ async def query_rag_system(query_text: str) -> str:
 
     Args:
         query_text: The natural language question from the user.
+        agent_id: Optional agent ID for context-aware responses.
+        agent_context: Optional pre-computed agent context.
+        format_type: Serialization format ('json' or 'toon'). Defaults to 'json'.
 
     Returns:
         A string containing the answer or an error message.
@@ -38,176 +46,254 @@ async def query_rag_system(query_text: str) -> str:
         logger.error("RAG Query: OpenAI client is not available. Cannot process query.")
         return "RAG Error: OpenAI client not available. Please check server configuration and OpenAI API key."
 
-    conn = None
     answer = (
         "An unexpected error occurred during the RAG query."  # Default error message
     )
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Get agent context if agent_id provided
+        from .context import get_agent_context, AgentQueryContext
+        from .intent_classifier import QueryIntentClassifier
+        from .personalizer import ResponsePersonalizer
+        from .memory_tracker import get_memory_tracker
+        
+        if agent_id and not agent_context:
+            agent_context = get_agent_context(agent_id)
+        
+        # Classify query intent
+        intent_classifier = QueryIntentClassifier()
+        query_intent = intent_classifier.classify(query_text, agent_context)
+        
+        # Update agent context with intent
+        if agent_context:
+            agent_context.query_intent = query_intent
+        
+        # Get memory tracker for this agent
+        memory_tracker = get_memory_tracker() if agent_id else None
+        
+        with db_connection() as conn:
+            cursor = conn.cursor()
 
-        live_context_results: List[Dict[str, Any]] = []
-        live_task_results: List[Dict[str, Any]] = []
-        vector_search_results: List[Dict[str, Any]] = (
-            []
-        )  # Store as dicts for easier access
+            live_context_results: List[Dict[str, Any]] = []
+            live_task_results: List[Dict[str, Any]] = []
+            vector_search_results: List[Dict[str, Any]] = (
+                []
+            )  # Store as dicts for easier access
 
-        # --- 1. Fetch Live Context (Recently Updated) ---
-        # Original main.py: lines 1445 - 1457
-        try:
-            cursor.execute(
-                "SELECT meta_value FROM rag_meta WHERE meta_key = ?",
-                ("last_indexed_context",),
-            )
-            last_indexed_context_row = cursor.fetchone()
-            last_indexed_context_time = (
-                last_indexed_context_row["meta_value"]
-                if last_indexed_context_row
-                else "1970-01-01T00:00:00Z"
-            )
-
-            cursor.execute(
-                """
-                SELECT context_key, value, description, last_updated
-                FROM project_context
-                WHERE last_updated > ?
-                ORDER BY last_updated DESC
-                LIMIT 5
-            """,
-                (last_indexed_context_time,),
-            )
-            # Convert rows to dicts for easier processing
-            live_context_results = [dict(row) for row in cursor.fetchall()]
-        except sqlite3.Error as e_live_ctx:
-            logger.warning(
-                f"RAG Query: Failed to fetch live project context: {e_live_ctx}"
-            )
-        except Exception as e_live_ctx_other:  # Catch any other unexpected error
-            logger.warning(
-                f"RAG Query: Unexpected error fetching live project context: {e_live_ctx_other}",
-                exc_info=True,
-            )
-
-        # --- 2. Fetch Live Tasks (Keyword Search) ---
-        # Original main.py: lines 1459 - 1477
-        try:
-            query_keywords = [
-                f"%{word.strip().lower()}%"
-                for word in query_text.split()
-                if len(word.strip()) > 2
-            ]
-            if query_keywords:
-                # Build LIKE clauses for title and description
-                # Ensure each keyword is used for both title and description search
-                conditions = []
-                sql_params_tasks: List[str] = []
-                for kw in query_keywords:
-                    conditions.append("LOWER(title) LIKE ?")
-                    sql_params_tasks.append(kw)
-                    conditions.append("LOWER(description) LIKE ?")
-                    sql_params_tasks.append(kw)
-
-                if conditions:
-                    # Validate that all conditions are safe (only LIKE patterns)
-                    safe_conditions = []
-                    for condition in conditions:
-                        if condition not in [
-                            "LOWER(title) LIKE ?",
-                            "LOWER(description) LIKE ?",
-                        ]:
-                            logger.warning(
-                                f"RAG Query: Skipping unsafe condition: {condition}"
-                            )
-                            continue
-                        safe_conditions.append(condition)
-
-                    if safe_conditions:
-                        where_clause = " OR ".join(safe_conditions)
-                        task_query_sql = f"""
-                            SELECT task_id, title, status, description, updated_at
-                            FROM tasks
-                            WHERE {where_clause}
-                            ORDER BY updated_at DESC
-                            LIMIT 5
-                        """
-                        cursor.execute(task_query_sql, sql_params_tasks)
-                    live_task_results = [dict(row) for row in cursor.fetchall()]
-        except sqlite3.Error as e_live_task:
-            logger.warning(
-                f"RAG Query: Failed to fetch live tasks based on query keywords: {e_live_task}"
-            )
-        except Exception as e_live_task_other:
-            logger.warning(
-                f"RAG Query: Unexpected error fetching live tasks: {e_live_task_other}",
-                exc_info=True,
-            )
-
-        # --- 3. Perform Vector Search (Indexed Knowledge) ---
-        # Original main.py: lines 1479 - 1506
-        if is_vss_loadable():  # Check global VSS status
+            # --- 1. Fetch Live Context (Recently Updated) ---
+            # Original main.py: lines 1445 - 1457
             try:
-                # Check if rag_embeddings table exists (main.py:1480-1484)
                 cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='rag_embeddings'"
+                    "SELECT meta_value FROM rag_meta WHERE meta_key = %s",
+                    ("last_indexed_context",),
                 )
-                if cursor.fetchone() is not None:
-                    # Embed the query (main.py:1487-1492)
-                    response = openai_client.embeddings.create(
-                        input=[query_text],
-                        model=EMBEDDING_MODEL,
-                        dimensions=EMBEDDING_DIMENSION,
-                    )
-                    query_embedding = response.data[0].embedding
-                    query_embedding_json = json.dumps(query_embedding)
+                last_indexed_context_row = cursor.fetchone()
+                last_indexed_context_time = (
+                    last_indexed_context_row["meta_value"]
+                    if last_indexed_context_row
+                    else "1970-01-01T00:00:00Z"
+                )
 
-                    # Search Vector Table with metadata
-                    k_results = 13  # Optimized based on recent RAG research
-                    sql_vector_search = """
-                        SELECT c.chunk_text, c.source_type, c.source_ref, c.metadata, r.distance
-                        FROM rag_embeddings r
-                        JOIN rag_chunks c ON r.rowid = c.chunk_id
-                        WHERE r.embedding MATCH ? AND k = ?
-                        ORDER BY r.distance
+                cursor.execute(
                     """
-                    cursor.execute(sql_vector_search, (query_embedding_json, k_results))
-                    raw_results = cursor.fetchall()
-
-                    # Process results to parse metadata
-                    for row in raw_results:
-                        result = dict(row)
-                        # Parse metadata JSON if present
-                        if result.get("metadata"):
-                            try:
-                                result["metadata"] = json.loads(result["metadata"])
-                            except json.JSONDecodeError:
-                                result["metadata"] = None
-                        vector_search_results.append(result)
-                else:
-                    logger.warning(
-                        "RAG Query: 'rag_embeddings' table not found. Skipping vector search."
-                    )
-            except sqlite3.Error as e_vec_sql:
-                logger.error(
-                    f"RAG Query: Database error during vector search: {e_vec_sql}"
+                    SELECT context_key, value, description, last_updated
+                    FROM project_context
+                    WHERE last_updated > %s
+                    ORDER BY last_updated DESC
+                    LIMIT 5
+                """,
+                    (last_indexed_context_time,),
                 )
-            except (
-                openai.APIError
-            ) as e_openai_emb:  # Catch OpenAI errors during embedding
-                logger.error(
-                    f"RAG Query: OpenAI API error during query embedding: {e_openai_emb}"
+                # Convert rows to dicts for easier processing
+                live_context_results = [dict(row) for row in cursor.fetchall()]
+            except psycopg2.Error as e_live_ctx:
+                logger.warning(
+                    f"RAG Query: Failed to fetch live project context: {e_live_ctx}"
                 )
-            except Exception as e_vec_other:
-                logger.error(
-                    f"RAG Query: Unexpected error during vector search part: {e_vec_other}",
+            except Exception as e_live_ctx_other:  # Catch any other unexpected error
+                logger.warning(
+                    f"RAG Query: Unexpected error fetching live project context: {e_live_ctx_other}",
                     exc_info=True,
                 )
-        else:
-            logger.warning(
-                "RAG Query: Vector search (sqlite-vec) is not available. Skipping vector search."
-            )
 
-        # --- 4. Combine Contexts for LLM ---
+            # --- 2. Fetch Live Tasks (Keyword Search) ---
+            # Original main.py: lines 1459 - 1477
+            try:
+                query_keywords = [
+                    f"%{word.strip().lower()}%"
+                    for word in query_text.split()
+                    if len(word.strip()) > 2
+                ]
+                if query_keywords:
+                    # Build LIKE clauses for title and description
+                    # Ensure each keyword is used for both title and description search
+                    conditions = []
+                    sql_params_tasks: List[str] = []
+                    for kw in query_keywords:
+                        conditions.append("LOWER(title) LIKE %s")
+                        sql_params_tasks.append(kw)
+                        conditions.append("LOWER(description) LIKE %s")
+                        sql_params_tasks.append(kw)
+
+                    if conditions:
+                        # Validate that all conditions are safe (only LIKE patterns)
+                        safe_conditions = []
+                        for condition in conditions:
+                            if condition not in [
+                                "LOWER(title) LIKE %s",
+                                "LOWER(description) LIKE %s",
+                            ]:
+                                logger.warning(
+                                    f"RAG Query: Skipping unsafe condition: {condition}"
+                                )
+                                continue
+                            safe_conditions.append(condition)
+
+                        if safe_conditions:
+                            where_clause = " OR ".join(safe_conditions)
+                            task_query_sql = f"""
+                                SELECT task_id, title, status, description, updated_at
+                                FROM tasks
+                                WHERE {where_clause}
+                                ORDER BY updated_at DESC
+                                LIMIT 5
+                            """
+                            cursor.execute(task_query_sql, sql_params_tasks)
+                            live_task_results = [dict(row) for row in cursor.fetchall()]
+            except psycopg2.Error as e_live_task:
+                logger.warning(
+                    f"RAG Query: Failed to fetch live tasks based on query keywords: {e_live_task}"
+                )
+            except Exception as e_live_task_other:
+                logger.warning(
+                    f"RAG Query: Unexpected error fetching live tasks: {e_live_task_other}",
+                    exc_info=True,
+                )
+
+            # --- 3. Perform Vector Search (Indexed Knowledge) ---
+            # Original main.py: lines 1479 - 1506
+            if is_vss_loadable():  # Check global VSS status
+                try:
+                    # Check if rag_embeddings table exists (PostgreSQL)
+                    cursor.execute(
+                        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'rag_embeddings') as exists"
+                    )
+                    result = cursor.fetchone()
+                    if (result['exists'] if isinstance(result, dict) else result[0]):
+                        # Embed the query (main.py:1487-1492)
+                        response = openai_client.embeddings.create(
+                            input=[query_text],
+                            model=EMBEDDING_MODEL,
+                            dimensions=EMBEDDING_DIMENSION,
+                        )
+                        query_embedding = response.data[0].embedding
+
+                        # Search Vector Table with metadata using pgvector
+                        k_results = 13  # Optimized based on recent RAG research
+                        sql_vector_search = """
+                            SELECT c.chunk_text, c.source_type, c.source_ref, c.metadata, 
+                                   1 - (r.embedding <=> %s::vector) as distance
+                            FROM rag_embeddings r
+                            JOIN rag_chunks c ON r.chunk_id = c.chunk_id
+                            ORDER BY r.embedding <=> %s::vector
+                            LIMIT %s
+                        """
+                        cursor.execute(sql_vector_search, (query_embedding, query_embedding, k_results))
+                        raw_results = cursor.fetchall()
+
+                        # Process results to parse metadata
+                        for row in raw_results:
+                            result = dict(row)
+                            # Parse metadata JSON if present
+                            if result.get("metadata"):
+                                try:
+                                    result["metadata"] = json.loads(result["metadata"])
+                                except json.JSONDecodeError:
+                                    result["metadata"] = None
+                            vector_search_results.append(result)
+                    else:
+                        logger.warning(
+                            "RAG Query: 'rag_embeddings' table not found. Skipping vector search."
+                        )
+                except psycopg2.Error as e_vec_sql:
+                    logger.error(
+                        f"RAG Query: Database error during vector search: {e_vec_sql}"
+                    )
+                except (
+                    openai.APIError
+                ) as e_openai_emb:  # Catch OpenAI errors during embedding
+                    logger.error(
+                        f"RAG Query: OpenAI API error during query embedding: {e_openai_emb}"
+                    )
+                except Exception as e_vec_other:
+                    logger.error(
+                        f"RAG Query: Unexpected error during vector search part: {e_vec_other}",
+                        exc_info=True,
+                    )
+            else:
+                logger.warning(
+                    "RAG Query: Vector search (pgvector) is not available. Skipping vector search."
+                )
+
+        # --- 4. Personalize results based on agent context (BEFORE building context) ---
+        # This happens outside the database connection since it doesn't need DB access
+        personalizer = ResponsePersonalizer()
+        if agent_context:
+            # Convert vector search results to format expected by personalizer
+            vector_results_for_personalization = [
+                {
+                    **item,
+                    'content': item.get('chunk_text', ''),
+                    'title': item.get('source_ref', '')
+                }
+                for item in vector_search_results
+            ]
+            vector_search_results = personalizer.personalize_response(
+                vector_results_for_personalization,
+                agent_context
+            )
+            # Remove personalization metadata fields for context building
+            for item in vector_search_results:
+                item.pop('_role_score', None)
+                item.pop('_task_boost', None)
+            
+            # Also personalize live context results and live task results
+            # Convert to format expected by personalizer (add 'content' field)
+            live_context_for_personalization = [
+                {
+                    **item,
+                    'content': f"{item.get('value', '')} {item.get('description', '')}",
+                    'title': item.get('context_key', '')
+                }
+                for item in live_context_results
+            ]
+            live_context_results = personalizer.personalize_response(
+                live_context_for_personalization,
+                agent_context
+            )
+            # Remove personalization metadata fields for context building
+            for item in live_context_results:
+                item.pop('_role_score', None)
+                item.pop('_task_boost', None)
+            
+            live_tasks_for_personalization = [
+                {
+                    **task,
+                    'content': f"{task.get('title', '')} {task.get('description', '')}",
+                    'title': task.get('title', '')
+                }
+                for task in live_task_results
+            ]
+            live_task_results = personalizer.personalize_response(
+                live_tasks_for_personalization,
+                agent_context
+            )
+            # Remove personalization metadata fields
+            for task in live_task_results:
+                task.pop('_role_score', None)
+                task.pop('_task_boost', None)
+
+        # --- 5. Combine Contexts for LLM ---
         # Original main.py: lines 1509 - 1548
         context_parts: List[str] = []
         current_token_count: int = 0  # Approximate token count
@@ -221,6 +307,11 @@ async def query_rag_system(query_text: str) -> str:
                 if current_token_count + entry_tokens < MAX_CONTEXT_TOKENS:
                     context_parts.append(entry_text)
                     current_token_count += entry_tokens
+                    
+                    # Record context access in memory tracker
+                    if memory_tracker and agent_id:
+                        context_key = item.get('context_key', '')
+                        memory_tracker.record_access(agent_id, "live_context", context_key)
                 else:
                     break
             context_parts.append("---------------------------------------------")
@@ -234,11 +325,16 @@ async def query_rag_system(query_text: str) -> str:
                 if current_token_count + entry_tokens < MAX_CONTEXT_TOKENS:
                     context_parts.append(entry_text)
                     current_token_count += entry_tokens
+                    
+                    # Record task access in memory tracker
+                    if memory_tracker and agent_id:
+                        task_id = task.get('task_id', '')
+                        memory_tracker.record_access(agent_id, "live_tasks", task_id)
                 else:
                     break
             context_parts.append("---------------------------------------")
 
-        # Add Indexed Knowledge (Vector Search Results)
+        # Add Indexed Knowledge (Vector Search Results) - now personalized
         if vector_search_results:
             context_parts.append(
                 "--- Indexed Project Knowledge (Vector Search Results) ---"
@@ -249,6 +345,11 @@ async def query_rag_system(query_text: str) -> str:
                 source_ref = item["source_ref"]
                 metadata = item.get("metadata", {})
                 distance = item.get("distance", "N/A")
+                
+                # Record document access in memory tracker
+                if memory_tracker and agent_id:
+                    chunk_id = item.get("chunk_id", item.get("id", f"{source_ref}_{i}"))
+                    memory_tracker.record_access(agent_id, "vector_search", chunk_id)
 
                 # Enhanced source info with metadata
                 source_info = f"Source Type: {source_type}, Reference: {source_ref}"
@@ -288,9 +389,10 @@ async def query_rag_system(query_text: str) -> str:
         else:
             combined_context_str = "\n\n".join(context_parts)
 
-            # --- 5. Call Chat Completion API ---
+            # --- 6. Call Chat Completion API ---
             # Original main.py: lines 1550 - 1562
-            system_prompt_for_llm = """You are an AI assistant answering questions about a software project. 
+            # Build role-specific system prompt
+            base_system_prompt = """You are an AI assistant answering questions about a software project. 
 Use the provided context, which may include recently updated live data (like project context keys or tasks) and information retrieved from an indexed knowledge base (like documentation or code summaries), to answer the user's query. 
 Prioritize information from the 'Live' sections if available and relevant for time-sensitive data. 
 Answer using *only* the information given in the context. If the context doesn't contain the answer, state that clearly.
@@ -298,13 +400,25 @@ Answer using *only* the information given in the context. If the context doesn't
 Be VERBOSE and comprehensive in your responses. It's better to give too much context than too little. 
 When answering, please also suggest additional context entries and queries that might be helpful for understanding this topic better.
 For example, suggest related files to examine, related project context keys to check, or follow-up questions that could provide more insight.
-Always err on the side of providing more detailed explanations and comprehensive information rather than brief responses."""
+            Always err on the side of providing more detailed explanations and comprehensive information rather than brief responses."""
+            
+            # Add role-specific guidance
+            if agent_context:
+                system_prompt_for_llm = personalizer.add_role_guidance(
+                    base_system_prompt,
+                    agent_context
+                )
+            else:
+                system_prompt_for_llm = base_system_prompt
 
             user_message_for_llm = f"CONTEXT:\n{combined_context_str}\n\nQUERY:\n{query_text}\n\nBased *only* on the CONTEXT provided above, please answer the QUERY."
 
             logger.debug(
                 f"RAG Query: Combined context for LLM (approx tokens: {current_token_count}):\n{combined_context_str[:500]}..."
             )  # Log excerpt
+            logger.debug(
+                f"RAG Query: Agent context - role={agent_context.agent_role if agent_context else 'none'}, intent={query_intent}"
+            )
             logger.debug(
                 f"RAG Query: User message for LLM:\n{user_message_for_llm[:500]}..."
             )
@@ -318,11 +432,15 @@ Always err on the side of providing more detailed explanations and comprehensive
                 temperature=0.4,  # Increased for more diverse context discovery while maintaining accuracy
             )
             answer = chat_response.choices[0].message.content
+            
+            # Format response with task-specific context if available
+            if agent_context:
+                answer = personalizer.format_response(answer, agent_context)
 
     except openai.APIError as e_openai:  # main.py:1563
         logger.error(f"RAG Query: OpenAI API error: {e_openai}", exc_info=True)
         answer = f"Error communicating with OpenAI: {e_openai}"
-    except sqlite3.Error as e_sql:  # main.py:1566
+    except psycopg2.Error as e_sql:  # main.py:1566
         logger.error(f"RAG Query: Database error: {e_sql}", exc_info=True)
         answer = f"Error querying RAG database: {e_sql}"
     except Exception as e_unexpected:  # main.py:1569
@@ -330,9 +448,6 @@ Always err on the side of providing more detailed explanations and comprehensive
         answer = (
             f"An unexpected error occurred during the RAG query: {str(e_unexpected)}"
         )
-    finally:
-        if conn:
-            conn.close()
 
     return answer
 
@@ -362,19 +477,18 @@ async def query_rag_system_with_model(
     # Use provided max_tokens or default to the configured value
     context_limit = max_tokens if max_tokens else MAX_CONTEXT_TOKENS
 
-    conn = None
     answer = "An unexpected error occurred during the RAG query."
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        with db_connection() as conn:
+            cursor = conn.cursor()
 
-        live_context_results: List[Dict[str, Any]] = []
-        live_task_results: List[Dict[str, Any]] = []
-        vector_search_results: List[Dict[str, Any]] = []
+            live_context_results: List[Dict[str, Any]] = []
+            live_task_results: List[Dict[str, Any]] = []
+            vector_search_results: List[Dict[str, Any]] = []
 
-        # Get live context (same as regular RAG)
-        cursor.execute(
+            # Get live context (same as regular RAG)
+            cursor.execute(
             "SELECT context_key, value, description, last_updated FROM project_context ORDER BY last_updated DESC"
         )
         live_context_results = [dict(row) for row in cursor.fetchall()]
@@ -396,9 +510,10 @@ async def query_rag_system_with_model(
             try:
                 # Check if rag_embeddings table exists
                 cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='rag_embeddings'"
+                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'rag_embeddings') as exists"
                 )
-                if cursor.fetchone() is not None:
+                result = cursor.fetchone()
+                if (result['exists'] if isinstance(result, dict) else result[0]):
                     # Embed the query
                     query_embedding_response = openai_client.embeddings.create(
                         input=[query_text],
@@ -406,18 +521,18 @@ async def query_rag_system_with_model(
                         dimensions=EMBEDDING_DIMENSION,
                     )
                     query_embedding = query_embedding_response.data[0].embedding
-                    query_embedding_json = json.dumps(query_embedding)
 
-                    # Perform vector search using sqlite-vec (matching working implementation)
+                    # Perform vector search using pgvector
                     k_results = 13  # Optimized based on recent RAG research
                     vector_search_sql = """
-                        SELECT c.chunk_text, c.source_type, c.source_ref, c.metadata, r.distance
+                        SELECT c.chunk_text, c.source_type, c.source_ref, c.metadata, 
+                               1 - (r.embedding <=> %s::vector) as distance
                         FROM rag_embeddings r
-                        JOIN rag_chunks c ON r.rowid = c.chunk_id
-                        WHERE r.embedding MATCH ? AND k = ?
-                        ORDER BY r.distance
+                        JOIN rag_chunks c ON r.chunk_id = c.chunk_id
+                        ORDER BY r.embedding <=> %s::vector
+                        LIMIT %s
                     """
-                    cursor.execute(vector_search_sql, (query_embedding_json, k_results))
+                    cursor.execute(vector_search_sql, (query_embedding, query_embedding, k_results))
                     raw_results = cursor.fetchall()
 
                     # Process results to parse metadata
@@ -434,7 +549,7 @@ async def query_rag_system_with_model(
                     logger.warning(
                         "RAG Query: 'rag_embeddings' table not found. Skipping vector search."
                     )
-            except sqlite3.Error as e_vec_sql:
+            except psycopg2.Error as e_vec_sql:
                 logger.error(
                     f"RAG Query: Database error during vector search: {e_vec_sql}"
                 )
@@ -564,8 +679,5 @@ Answer in the exact JSON format requested, but include thorough explanations in 
     except Exception as e:
         logger.error(f"RAG Query with model {model_name}: Error: {e}", exc_info=True)
         answer = f"Error during RAG query with {model_name}: {str(e)}"
-    finally:
-        if conn:
-            conn.close()
 
     return answer

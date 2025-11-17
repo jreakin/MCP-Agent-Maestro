@@ -1,0 +1,77 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: agent_mcp
+          POSTGRES_USER: agent_mcp
+          POSTGRES_PASSWORD: agent_mcp_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Set up environment variables
+      run: |
+        echo "DB_HOST=localhost" >> $GITHUB_ENV
+        echo "DB_PORT=5432" >> $GITHUB_ENV
+        echo "DB_NAME=agent_mcp" >> $GITHUB_ENV
+        echo "DB_USER=agent_mcp" >> $GITHUB_ENV
+        echo "DB_PASSWORD=agent_mcp_password" >> $GITHUB_ENV
+    
+    - name: Wait for PostgreSQL
+      run: |
+        until pg_isready -h localhost -p 5432 -U agent_mcp; do
+          echo "Waiting for PostgreSQL..."
+          sleep 1
+        done
+    
+    - name: Initialize database schema
+      run: |
+        python3 -c "from agent_mcp.db.postgres_schema import init_database; init_database()"
+    
+    - name: Run tests
+      run: uv run pytest tests/ -v
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    
+    - name: Run tests with coverage
+      run: uv run pytest tests/ --cov=agent_mcp --cov-report=xml --cov-report=html
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+

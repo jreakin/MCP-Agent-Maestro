@@ -5,11 +5,62 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-# Version information
-VERSION = "2.0"
-GITHUB_REPO = "rinadelph/Agent-MCP"
-AUTHOR = "Luis Alejandro Rincon"
-GITHUB_URL = "https://github.com/rinadelph"
+# Import unified settings
+from .settings import get_settings
+
+# Version and description information - read from pyproject.toml (single source of truth)
+def _get_pyproject_data() -> dict:
+    """Read project metadata from pyproject.toml to keep it in sync with UV."""
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        try:
+            import tomli as tomllib  # Fallback for Python < 3.11
+        except ImportError:
+            # If tomli not available, try reading manually
+            pyproject_path = Path(__file__).parent.parent.parent.parent / "pyproject.toml"
+            if pyproject_path.exists():
+                data = {}
+                with open(pyproject_path, "r", encoding="utf-8") as f:
+                    in_project_section = False
+                    for line in f:
+                        line_stripped = line.strip()
+                        if line_stripped == "[project]":
+                            in_project_section = True
+                            continue
+                        if line_stripped.startswith("[") and in_project_section:
+                            break
+                        if in_project_section and "=" in line_stripped:
+                            key, value = line_stripped.split("=", 1)
+                            key = key.strip()
+                            value = value.strip().strip('"').strip("'")
+                            if key == "version":
+                                data["version"] = value
+                            elif key == "description":
+                                data["description"] = value
+                return data
+            return {"version": "0.2.0", "description": "MCP Agent Maestro"}  # Fallback
+    
+    pyproject_path = Path(__file__).parent.parent.parent.parent / "pyproject.toml"
+    if pyproject_path.exists():
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+            project_data = data.get("project", {})
+            return {
+                "version": project_data.get("version", "0.2.0"),
+                "description": project_data.get("description", "MCP Agent Maestro")
+            }
+    return {"version": "0.2.0", "description": "MCP Agent Maestro"}  # Fallback
+
+_pyproject_data = _get_pyproject_data()
+VERSION = _pyproject_data.get("version", "0.2.0")
+DESCRIPTION = _pyproject_data.get("description", "MCP Agent Maestro")
+GITHUB_REPO = "jreakin/mcp-agent-maestro"
+AUTHOR = "John R. Eakin"
+GITHUB_URL = "https://github.com/jreakin"
+
+# Get settings instance
+_settings = get_settings()
 
 
 # --- TUI Colors (ANSI Escape Codes) ---
@@ -59,14 +110,14 @@ DB_FILE_NAME: str = "mcp_state.db"  # From main.py:39
 # --- Logging Configuration ---
 LOG_FILE_NAME: str = "mcp_server.log"  # Based on main.py:46
 LOG_LEVEL: int = logging.INFO  # From main.py:43
-LOG_FORMAT_FILE: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+# Default request_id for logs without request context
+LOG_FORMAT_FILE: str = "%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] - %(message)s"
 LOG_FORMAT_CONSOLE: str = (
-    f"%(asctime)s - %(name)s - %(levelname)s - {TUIColors.DIM}%(message)s{TUIColors.ENDC}"  # Dim message text
+    f"%(asctime)s - %(name)s - %(levelname)s - {TUIColors.DIM}[%(request_id)s]{TUIColors.ENDC} - {TUIColors.DIM}%(message)s{TUIColors.ENDC}"  # Dim message text
 )
 
-CONSOLE_LOGGING_ENABLED = (
-    os.environ.get("MCP_DEBUG", "false").lower() == "true"
-)  # Enable console logging in debug mode
+# Use settings for debug mode
+CONSOLE_LOGGING_ENABLED = _settings.mcp_debug  # Enable console logging in debug mode
 
 
 def setup_logging():
@@ -80,18 +131,20 @@ def setup_logging():
         root_logger.removeHandler(handler)
 
     # 1. File Handler (only in debug mode)
-    debug_mode = os.environ.get("MCP_DEBUG", "false").lower() == "true"
+    debug_mode = _settings.mcp_debug
     if debug_mode:
-        file_formatter = logging.Formatter(LOG_FORMAT_FILE)
+        from ..utils.structured_logging import StructuredFormatter
+        file_formatter = StructuredFormatter(LOG_FORMAT_FILE)
         file_handler = logging.FileHandler(
-            LOG_FILE_NAME, mode="a", encoding="utf-8"
+            _settings.log_file, mode="a", encoding="utf-8"
         )  # Append mode
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
 
     # 2. Console Handler (with colors, conditional)
     if CONSOLE_LOGGING_ENABLED:
-        console_formatter = ColorfulFormatter(
+        from ..utils.structured_logging import StructuredFormatter
+        console_formatter = StructuredFormatter(
             LOG_FORMAT_CONSOLE, datefmt="%H:%M:%S"
         )  # Simpler datefmt for console
         console_handler = logging.StreamHandler(sys.stdout)
@@ -167,43 +220,25 @@ AGENT_COLORS: List[str] = (
 )
 
 # --- OpenAI Model Configuration ---
-# Advanced mode flag - set by CLI
-ADVANCED_EMBEDDINGS: bool = False  # Default to simple mode
+# Use settings for all OpenAI configuration
+ADVANCED_EMBEDDINGS: bool = _settings.advanced_embeddings
+DISABLE_AUTO_INDEXING: bool = _settings.disable_auto_indexing
 
-# Auto-indexing control - set by CLI
-DISABLE_AUTO_INDEXING: bool = False  # Default to automatic indexing
+# Backward compatibility exports (using settings)
+SIMPLE_EMBEDDING_MODEL: str = _settings.embedding_model
+SIMPLE_EMBEDDING_DIMENSION: int = _settings.embedding_dimension
+ADVANCED_EMBEDDING_MODEL: str = _settings.advanced_embedding_model
+ADVANCED_EMBEDDING_DIMENSION: int = _settings.advanced_embedding_dimension
 
-# Original/Simple mode configuration (default) - restored to original values
-SIMPLE_EMBEDDING_MODEL: str = (
-    "text-embedding-3-large"  # Original embedding model (unchanged)
-)
-SIMPLE_EMBEDDING_DIMENSION: int = 1536  # Increased from 1024 for better performance
+# Dynamic configuration based on mode (using settings properties)
+EMBEDDING_MODEL: str = _settings.effective_embedding_model
+EMBEDDING_DIMENSION: int = _settings.effective_embedding_dimension
 
-# Advanced mode configuration - new enhanced mode
-ADVANCED_EMBEDDING_MODEL: str = "text-embedding-3-large"  # From main.py:178
-ADVANCED_EMBEDDING_DIMENSION: int = (
-    3072  # Full dimension for text-embedding-3-large for better code understanding
-)
-
-# Dynamic configuration based on mode
-EMBEDDING_MODEL: str = (
-    ADVANCED_EMBEDDING_MODEL if ADVANCED_EMBEDDINGS else SIMPLE_EMBEDDING_MODEL
-)
-EMBEDDING_DIMENSION: int = (
-    ADVANCED_EMBEDDING_DIMENSION if ADVANCED_EMBEDDINGS else SIMPLE_EMBEDDING_DIMENSION
-)
-
-CHAT_MODEL: str = (
-    "gpt-4.1-2025-04-14"  # From main.py:179 (Ensure this matches your desired model)
-)
-TASK_ANALYSIS_MODEL: str = (
-    "gpt-4.1-2025-04-14"  # Same model for consistent task placement analysis
-)
-MAX_EMBEDDING_BATCH_SIZE: int = 100  # From main.py:181
-MAX_CONTEXT_TOKENS: int = 1000000  # GPT-4.1 has 1M token context window
-TASK_ANALYSIS_MAX_TOKENS: int = (
-    1000000  # Same 1M token context window for task analysis
-)
+CHAT_MODEL: str = _settings.openai_model
+TASK_ANALYSIS_MODEL: str = _settings.task_analysis_model
+MAX_EMBEDDING_BATCH_SIZE: int = _settings.max_embedding_batch_size
+MAX_CONTEXT_TOKENS: int = _settings.max_context_tokens
+TASK_ANALYSIS_MAX_TOKENS: int = _settings.task_analysis_max_tokens
 
 # --- Project Directory Helpers ---
 # These rely on an environment variable "MCP_PROJECT_DIR" being set,
@@ -212,7 +247,8 @@ TASK_ANALYSIS_MAX_TOKENS: int = (
 
 def get_project_dir() -> Path:
     """Gets the resolved absolute path to the project directory."""
-    project_dir_str = os.environ.get("MCP_PROJECT_DIR")
+    # Check settings first, then fall back to environment variable for backward compatibility
+    project_dir_str = _settings.project_dir or os.environ.get("MCP_PROJECT_DIR")
     if not project_dir_str:
         # This case should ideally be handled at startup by the CLI,
         # ensuring MCP_PROJECT_DIR is always set.
@@ -223,8 +259,8 @@ def get_project_dir() -> Path:
 
 
 def get_agent_dir() -> Path:
-    """Gets the path to the .agent directory within the project directory."""
-    return get_project_dir() / ".agent"
+    """Gets the path to the .mcp-maestro directory within the project directory."""
+    return get_project_dir() / ".mcp-maestro"
 
 
 def get_db_path() -> Path:
@@ -232,27 +268,33 @@ def get_db_path() -> Path:
     return get_agent_dir() / DB_FILE_NAME
 
 
-# --- Environment Variable Check (Optional but good practice) ---
-OPENAI_API_KEY_ENV: Optional[str] = os.environ.get("OPENAI_API_KEY")  # From main.py:174
-# Debug print statement removed for clean console output
+# --- OpenAI API Key (backward compatibility) ---
+OPENAI_API_KEY_ENV: Optional[str] = (
+    _settings.openai_api_key.get_secret_value() 
+    if _settings.openai_api_key is not None 
+    else None
+)
 if not OPENAI_API_KEY_ENV:
-    logger.error(
-        "CRITICAL: OPENAI_API_KEY not found in environment variables. Please set it in your .env file or environment."
-    )
-    # Depending on strictness, you might want to raise an exception or sys.exit(1) here
-    # For now, just logging, as the openai_service.py will handle the client init failure.
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+    if embedding_provider != "ollama":
+        logger.warning(
+            "OPENAI_API_KEY not found in environment variables. "
+            "Set it in your .env file or use EMBEDDING_PROVIDER=ollama for local models."
+        )
 
 # --- Task Placement Configuration (System 8) ---
-ENABLE_TASK_PLACEMENT_RAG: bool = (
-    os.getenv("ENABLE_TASK_PLACEMENT_RAG", "true").lower() == "true"
-)
-TASK_DUPLICATION_THRESHOLD: float = float(
-    os.getenv("TASK_DUPLICATION_THRESHOLD", "0.8")
-)
-ALLOW_RAG_OVERRIDE: bool = os.getenv("ALLOW_RAG_OVERRIDE", "true").lower() == "true"
-TASK_PLACEMENT_RAG_TIMEOUT: int = int(
-    os.getenv("TASK_PLACEMENT_RAG_TIMEOUT", "5")
-)  # seconds
+ENABLE_TASK_PLACEMENT_RAG: bool = _settings.enable_task_placement_rag
+TASK_DUPLICATION_THRESHOLD: float = _settings.task_duplication_threshold
+ALLOW_RAG_OVERRIDE: bool = _settings.allow_rag_override
+TASK_PLACEMENT_RAG_TIMEOUT: int = _settings.task_placement_rag_timeout
+
+# --- Security Configuration ---
+SECURITY_ENABLED: bool = _settings.security_enabled
+SECURITY_SCAN_TOOL_SCHEMAS: bool = _settings.security_scan_tool_schemas
+SECURITY_SCAN_TOOL_RESPONSES: bool = _settings.security_scan_tool_responses
+SECURITY_SANITIZATION_MODE: str = _settings.security_sanitization_mode
+SECURITY_ALERT_WEBHOOK: Optional[str] = _settings.security_alert_webhook
+SECURITY_USE_ML_DETECTION: bool = _settings.security_use_ml_detection
 
 # Log that configuration is loaded (optional)
 logger.info("Core configuration loaded (with colorful logging setup).")

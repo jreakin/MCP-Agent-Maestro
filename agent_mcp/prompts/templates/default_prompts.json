@@ -1,0 +1,98 @@
+[
+  {
+    "name": "Implement Feature from Specification",
+    "description": "Create a new feature based on a detailed specification",
+    "category": "implementation",
+    "agent_roles": ["worker", "frontend", "backend"],
+    "template": "Implement the following feature:\n\nSpecification: {{SPECIFICATION}}\n\nRequirements:\n- Follow existing code patterns\n- Add appropriate error handling\n- Include unit tests\n- Update documentation if needed\n\nStart by analyzing the codebase structure and then implement step by step.",
+    "variables": [
+      {
+        "name": "SPECIFICATION",
+        "description": "Detailed feature specification",
+        "required": true,
+        "placeholder": "Enter feature specification..."
+      }
+    ],
+    "tags": ["implementation", "feature", "development"]
+  },
+  {
+    "name": "Add Unit Tests for Component",
+    "description": "Create comprehensive unit tests for a component",
+    "category": "testing",
+    "agent_roles": ["worker"],
+    "template": "Add unit tests for {{COMPONENT_NAME}}.\n\nTest Coverage:\n- {{TEST_SCENARIOS}}\n\nUse the existing test framework and patterns. Ensure edge cases are covered.",
+    "variables": [
+      {
+        "name": "COMPONENT_NAME",
+        "description": "Name of the component to test",
+        "required": true
+      },
+      {
+        "name": "TEST_SCENARIOS",
+        "description": "List of test scenarios to cover",
+        "required": false
+      }
+    ],
+    "tags": ["testing", "unit-tests", "quality"]
+  },
+  {
+    "name": "Debug Failing Test",
+    "description": "Debug and fix a failing test",
+    "category": "debugging",
+    "agent_roles": ["worker"],
+    "template": "Debug the failing test: {{TEST_NAME}}\n\nError: {{ERROR_MESSAGE}}\n\nSteps:\n1. Reproduce the failure\n2. Identify root cause\n3. Fix the issue\n4. Verify the fix\n5. Ensure no regressions",
+    "variables": [
+      {
+        "name": "TEST_NAME",
+        "description": "Name of the failing test",
+        "required": true
+      },
+      {
+        "name": "ERROR_MESSAGE",
+        "description": "Error message from test failure",
+        "required": true
+      }
+    ],
+    "tags": ["debugging", "testing", "fix"]
+  },
+  {
+    "name": "Security Review for Authentication Flow",
+    "description": "Perform security review of authentication implementation",
+    "category": "security",
+    "agent_roles": ["security"],
+    "template": "Perform a comprehensive security review of the authentication flow.\n\nFocus Areas:\n- Authentication mechanisms\n- Session management\n- Password handling\n- Token security\n- Rate limiting\n- Input validation\n\nProvide detailed findings and recommendations.",
+    "variables": [],
+    "tags": ["security", "review", "authentication"]
+  },
+  {
+    "name": "Explain System Architecture",
+    "description": "Get detailed explanation of system architecture",
+    "category": "architecture",
+    "agent_roles": ["research", "manager"],
+    "template": "Explain the system architecture for {{COMPONENT}}.\n\nInclude:\n- Overall design\n- Key components and their interactions\n- Data flow\n- Integration points\n- Design decisions and rationale",
+    "variables": [
+      {
+        "name": "COMPONENT",
+        "description": "Component or system to explain",
+        "required": true
+      }
+    ],
+    "tags": ["architecture", "documentation", "analysis"]
+  },
+  {
+    "name": "Refactor Code for Readability",
+    "description": "Refactor code to improve readability and maintainability",
+    "category": "implementation",
+    "agent_roles": ["worker"],
+    "template": "Refactor the following code for better readability:\n\nFile: {{FILE_PATH}}\n\nGoals:\n- Improve code clarity\n- Reduce complexity\n- Follow best practices\n- Maintain functionality\n- Add comments where needed",
+    "variables": [
+      {
+        "name": "FILE_PATH",
+        "description": "Path to file to refactor",
+        "required": true
+      }
+    ],
+    "tags": ["refactoring", "code-quality", "maintainability"]
+  }
+]
+

@@ -3,7 +3,7 @@ import json
 import datetime
 import subprocess  # For launching Cursor (will be commented out)
 import os
-import sqlite3
+import psycopg2
 from typing import List, Dict, Any, Optional
 
 import mcp.types as mcp_types  # Assuming this is your mcp.types path
@@ -28,7 +28,7 @@ from ..utils.tmux_utils import (
     send_command_to_session,
 )
 from ..utils.prompt_templates import build_agent_prompt
-from ..db.connection import get_db_connection, execute_db_write
+from ..db import get_db_connection, execute_db_write, return_connection
 from ..db.actions.agent_actions_db import log_agent_action_to_db  # For DB logging
 
 
@@ -138,7 +138,7 @@ async def create_agent_tool_impl(
         cursor = conn.cursor()
 
         # Double check in DB (main.py:1077-1081)
-        cursor.execute("SELECT agent_id FROM agents WHERE agent_id = ?", (agent_id,))
+        cursor.execute("SELECT agent_id FROM agents WHERE agent_id = %s", (agent_id,))
         if cursor.fetchone():
             return [
                 mcp_types.TextContent(
@@ -150,7 +150,7 @@ async def create_agent_tool_impl(
         # Validate task existence and availability
         for task_id in task_ids:
             cursor.execute(
-                "SELECT task_id, assigned_to, status FROM tasks WHERE task_id = ?",
+                "SELECT task_id, assigned_to, status FROM tasks WHERE task_id = %s",
                 (task_id,),
             )
             task_row = cursor.fetchone()
@@ -227,7 +227,7 @@ async def create_agent_tool_impl(
         cursor.execute(
             """
             INSERT INTO agents (token, agent_id, capabilities, created_at, status, working_directory, color, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 new_agent_token,
@@ -258,7 +258,7 @@ async def create_agent_tool_impl(
         for task_id in task_ids:
             # Update task assignment
             cursor.execute(
-                "UPDATE tasks SET assigned_to = ?, status = 'pending', updated_at = ? WHERE task_id = ?",
+                "UPDATE tasks SET assigned_to = %s, status = 'pending', updated_at = %s WHERE task_id = %s",
                 (agent_id, created_at_iso, task_id),
             )
 
@@ -277,7 +277,7 @@ async def create_agent_tool_impl(
                 g.tasks[task_id]["updated_at"] = created_at_iso
             else:
                 # If task not in cache, fetch from database and add to cache
-                cursor.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
+                cursor.execute("SELECT * FROM tasks WHERE task_id = %s", (task_id,))
                 task_row = cursor.fetchone()
                 if task_row:
                     task_data = dict(task_row)
@@ -303,7 +303,7 @@ async def create_agent_tool_impl(
         # Update agent with current task (set to first task if multiple)
         if assigned_tasks:
             cursor.execute(
-                "UPDATE agents SET current_task = ? WHERE agent_id = ?",
+                "UPDATE agents SET current_task = %s WHERE agent_id = %s",
                 (assigned_tasks[0], agent_id),
             )
 
@@ -562,7 +562,7 @@ async def create_agent_tool_impl(
             )
         ]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(
@@ -584,7 +584,7 @@ async def create_agent_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- view_status tool ---
@@ -719,7 +719,7 @@ async def terminate_agent_tool_impl(
         if not found_agent_token:
             # Check DB if not found in memory (main.py:1285-1290)
             cursor.execute(
-                "SELECT token FROM agents WHERE agent_id = ? AND status != ?",
+                "SELECT token FROM agents WHERE agent_id = %s AND status != %s",
                 (agent_id_to_terminate, "terminated"),
             )
             row = cursor.fetchone()
@@ -741,8 +741,8 @@ async def terminate_agent_tool_impl(
         terminated_at_iso = datetime.datetime.now().isoformat()
         cursor.execute(
             """
-            UPDATE agents SET status = ?, terminated_at = ?, updated_at = ?, current_task = NULL
-            WHERE agent_id = ? AND status != ? 
+            UPDATE agents SET status = %s, terminated_at = %s, updated_at = %s, current_task = NULL
+            WHERE agent_id = %s AND status != %s 
         """,
             (
                 "terminated",
@@ -829,7 +829,7 @@ async def terminate_agent_tool_impl(
             )
         ]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(
@@ -855,7 +855,7 @@ async def terminate_agent_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- view_audit_log tool ---
@@ -1010,28 +1010,28 @@ async def get_agent_tokens_tool_impl(
 
         # Apply filters
         if filter_status:
-            base_query += " AND status = ?"
+            base_query += " AND status = %s"
             query_params.append(filter_status)
 
         if filter_agent_id_pattern:
-            base_query += " AND agent_id LIKE ?"
+            base_query += " AND agent_id LIKE %s"
             query_params.append(filter_agent_id_pattern)
 
         if not include_terminated:
-            base_query += " AND status != ?"
+            base_query += " AND status != %s"
             query_params.append("terminated")
 
         if filter_created_after:
-            base_query += " AND created_at >= ?"
+            base_query += " AND created_at >= %s"
             query_params.append(filter_created_after)
 
         if filter_created_before:
-            base_query += " AND created_at <= ?"
+            base_query += " AND created_at <= %s"
             query_params.append(filter_created_before)
 
         # Add sorting and pagination
         base_query += f" ORDER BY {sort_by} {sort_order}"
-        base_query += " LIMIT ? OFFSET ?"
+        base_query += " LIMIT %s OFFSET %s"
         query_params.extend([limit, offset])
 
         # Execute query
@@ -1057,34 +1057,35 @@ async def get_agent_tokens_tool_impl(
 
         # Get total count for pagination info
         count_query = """
-            SELECT COUNT(*) as total
+            SELECT COUNT(*) as count
             FROM agents
             WHERE 1=1
         """
 
         count_params = []
         if filter_status:
-            count_query += " AND status = ?"
+            count_query += " AND status = %s"
             count_params.append(filter_status)
 
         if filter_agent_id_pattern:
-            count_query += " AND agent_id LIKE ?"
+            count_query += " AND agent_id LIKE %s"
             count_params.append(filter_agent_id_pattern)
 
         if not include_terminated:
-            count_query += " AND status != ?"
+            count_query += " AND status != %s"
             count_params.append("terminated")
 
         if filter_created_after:
-            count_query += " AND created_at >= ?"
+            count_query += " AND created_at >= %s"
             count_params.append(filter_created_after)
 
         if filter_created_before:
-            count_query += " AND created_at <= ?"
+            count_query += " AND created_at <= %s"
             count_params.append(filter_created_before)
 
         cursor.execute(count_query, count_params)
-        total_count = cursor.fetchone()[0]
+        result = cursor.fetchone()
+        total_count = result['count'] if isinstance(result, dict) else result[0]
 
         # Log this access
         log_audit(
@@ -1133,7 +1134,7 @@ async def get_agent_tokens_tool_impl(
             )
         ]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         logger.error(f"Database error retrieving agent tokens: {e_sql}", exc_info=True)
         return [
             mcp_types.TextContent(
@@ -1149,7 +1150,7 @@ async def get_agent_tokens_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- relaunch_agent tool ---
@@ -1184,7 +1185,7 @@ async def relaunch_agent_tool_impl(
         cursor = conn.cursor()
 
         # Check if agent exists and get current status
-        cursor.execute("SELECT * FROM agents WHERE agent_id = ?", (agent_id,))
+        cursor.execute("SELECT * FROM agents WHERE agent_id = %s", (agent_id,))
         agent_row = cursor.fetchone()
         if not agent_row:
             return [
@@ -1239,14 +1240,14 @@ async def relaunch_agent_tool_impl(
         if generate_new_token:
             agent_token = generate_token()
             cursor.execute(
-                "UPDATE agents SET token = ? WHERE agent_id = ?",
+                "UPDATE agents SET token = %s WHERE agent_id = %s",
                 (agent_token, agent_id),
             )
 
         # Update agent status to active
         updated_at_iso = datetime.datetime.now().isoformat()
         cursor.execute(
-            "UPDATE agents SET status = ?, updated_at = ? WHERE agent_id = ?",
+            "UPDATE agents SET status = %s, updated_at = %s WHERE agent_id = %s",
             ("active", updated_at_iso, agent_id),
         )
 
@@ -1264,7 +1265,7 @@ async def relaunch_agent_tool_impl(
             logger.error(f"Failed to build or send prompt for relaunch: {e_prompt}")
             # Revert status change
             cursor.execute(
-                "UPDATE agents SET status = ? WHERE agent_id = ?",
+                "UPDATE agents SET status = %s WHERE agent_id = %s",
                 (current_status, agent_id),
             )
             conn.commit()
@@ -1329,7 +1330,7 @@ async def relaunch_agent_tool_impl(
 
         return [mcp_types.TextContent(type="text", text="\n".join(response_parts))]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(
@@ -1353,7 +1354,7 @@ async def relaunch_agent_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- Register all admin tools ---

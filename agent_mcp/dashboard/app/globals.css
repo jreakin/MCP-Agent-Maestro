@@ -58,97 +58,97 @@
 :root {
   --radius: 0.625rem;
   
-  /* Light Theme - Deep Ocean Tech Colors with improved contrast */
+  /* Light Theme - Ohio State Colors (Scarlet, Grey, Black) */
   --background: hsl(0, 0%, 100%);
-  --foreground: hsl(215, 30%, 8%);
+  --foreground: hsl(0, 0%, 0%);
   --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(215, 30%, 8%);
+  --card-foreground: hsl(0, 0%, 0%);
   --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(215, 30%, 8%);
-  --primary: hsl(178, 84%, 40%);
+  --popover-foreground: hsl(0, 0%, 0%);
+  --primary: hsl(0, 100%, 37%); /* Scarlet #BB0000 */
   --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(210, 40%, 98%);
-  --secondary-foreground: hsl(215, 30%, 8%);
-  --muted: hsl(210, 40%, 96%);
-  --muted-foreground: hsl(215, 25%, 25%);
-  --accent: hsl(210, 40%, 96%);
-  --accent-foreground: hsl(215, 30%, 8%);
-  --destructive: hsl(11, 80%, 50%);
-  --border: hsl(214.3, 31.8%, 91.4%);
-  --input: hsl(214.3, 31.8%, 91.4%);
-  --ring: hsl(178, 84%, 40%);
+  --secondary: hsl(0, 0%, 50%); /* Grey */
+  --secondary-foreground: hsl(0, 0%, 100%);
+  --muted: hsl(0, 0%, 96%);
+  --muted-foreground: hsl(0, 0%, 40%);
+  --accent: hsl(0, 0%, 50%); /* Grey */
+  --accent-foreground: hsl(0, 0%, 100%);
+  --destructive: hsl(0, 100%, 37%); /* Scarlet */
+  --border: hsl(0, 0%, 85%);
+  --input: hsl(0, 0%, 85%);
+  --ring: hsl(0, 100%, 37%); /* Scarlet */
   
-  /* Enhanced chart colors - Deep Ocean Tech palette */
-  --chart-1: hsl(178, 84%, 40%);
-  --chart-2: hsl(188, 94%, 45%);
-  --chart-3: hsl(262, 83%, 58%);
-  --chart-4: hsl(43, 100%, 48%);
-  --chart-5: hsl(11, 80%, 50%);
+  /* Enhanced chart colors - Ohio State palette */
+  --chart-1: hsl(0, 100%, 37%); /* Scarlet */
+  --chart-2: hsl(0, 0%, 50%); /* Grey */
+  --chart-3: hsl(0, 0%, 0%); /* Black */
+  --chart-4: hsl(0, 100%, 45%); /* Lighter scarlet */
+  --chart-5: hsl(0, 0%, 30%); /* Dark grey */
   
-  /* Sidebar with Deep Ocean Tech styling */
-  --sidebar: hsl(210, 40%, 99%);
-  --sidebar-foreground: hsl(215, 30%, 8%);
-  --sidebar-primary: hsl(178, 84%, 40%);
+  /* Sidebar with Ohio State styling */
+  --sidebar: hsl(0, 0%, 98%);
+  --sidebar-foreground: hsl(0, 0%, 0%);
+  --sidebar-primary: hsl(0, 100%, 37%); /* Scarlet */
   --sidebar-primary-foreground: hsl(0, 0%, 100%);
-  --sidebar-accent: hsl(210, 40%, 96%);
-  --sidebar-accent-foreground: hsl(215, 30%, 8%);
-  --sidebar-border: hsl(214.3, 31.8%, 91.4%);
-  --sidebar-ring: hsl(178, 84%, 40%);
+  --sidebar-accent: hsl(0, 0%, 50%); /* Grey */
+  --sidebar-accent-foreground: hsl(0, 0%, 100%);
+  --sidebar-border: hsl(0, 0%, 85%);
+  --sidebar-ring: hsl(0, 100%, 37%); /* Scarlet */
   
-  /* Premium semantic colors - Deep Ocean Tech */
-  --success: hsl(178, 84%, 40%);
+  /* Premium semantic colors - Ohio State */
+  --success: hsl(0, 100%, 37%); /* Scarlet */
   --success-foreground: hsl(0, 0%, 100%);
-  --warning: hsl(43, 100%, 48%);
+  --warning: hsl(0, 0%, 50%); /* Grey */
   --warning-foreground: hsl(0, 0%, 100%);
-  --info: hsl(188, 94%, 45%);
+  --info: hsl(0, 0%, 0%); /* Black */
   --info-foreground: hsl(0, 0%, 100%);
 }
 
 .dark {
-  /* Dark Theme - Deep Ocean Tech Design */
-  --background: hsl(220, 27%, 6%);
-  --foreground: hsl(210, 40%, 98%);
-  --card: hsl(220, 27%, 8%);
-  --card-foreground: hsl(210, 40%, 98%);
-  --popover: hsl(220, 27%, 8%);
-  --popover-foreground: hsl(210, 40%, 98%);
-  --primary: hsl(178, 84%, 40%);
-  --primary-foreground: hsl(220, 27%, 6%);
-  --secondary: hsl(217.2, 32.6%, 17.5%);
-  --secondary-foreground: hsl(210, 40%, 98%);
-  --muted: hsl(217.2, 32.6%, 17.5%);
-  --muted-foreground: hsl(215, 20.2%, 65.1%);
-  --accent: hsl(217.2, 32.6%, 17.5%);
-  --accent-foreground: hsl(210, 40%, 98%);
-  --destructive: hsl(11, 80%, 50%);
-  --border: hsl(217.2, 32.6%, 17.5%);
-  --input: hsl(217.2, 32.6%, 17.5%);
-  --ring: hsl(178, 84%, 40%);
+  /* Dark Theme - Ohio State Colors (Scarlet, Grey, Black) */
+  --background: hsl(0, 0%, 0%); /* Pure black */
+  --foreground: hsl(0, 0%, 98%);
+  --card: hsl(0, 0%, 5%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --popover: hsl(0, 0%, 5%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --primary: hsl(0, 100%, 37%); /* Scarlet #BB0000 */
+  --primary-foreground: hsl(0, 0%, 98%);
+  --secondary: hsl(0, 0%, 30%); /* Dark grey */
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --muted: hsl(0, 0%, 20%);
+  --muted-foreground: hsl(0, 0%, 65%);
+  --accent: hsl(0, 0%, 30%); /* Dark grey */
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 100%, 37%); /* Scarlet */
+  --border: hsl(0, 0%, 25%);
+  --input: hsl(0, 0%, 25%);
+  --ring: hsl(0, 100%, 37%); /* Scarlet */
   
-  /* Enhanced chart colors for dark theme - Deep Ocean Tech */
-  --chart-1: hsl(178, 84%, 40%);
-  --chart-2: hsl(188, 94%, 45%);
-  --chart-3: hsl(262, 83%, 58%);
-  --chart-4: hsl(43, 100%, 48%);
-  --chart-5: hsl(11, 80%, 50%);
+  /* Enhanced chart colors for dark theme - Ohio State */
+  --chart-1: hsl(0, 100%, 37%); /* Scarlet */
+  --chart-2: hsl(0, 0%, 50%); /* Grey */
+  --chart-3: hsl(0, 0%, 0%); /* Black */
+  --chart-4: hsl(0, 100%, 45%); /* Lighter scarlet */
+  --chart-5: hsl(0, 0%, 70%); /* Light grey */
   
-  /* Sophisticated dark sidebar - Deep Ocean Tech */
-  --sidebar: hsl(220, 27%, 6%);
-  --sidebar-foreground: hsl(210, 40%, 98%);
-  --sidebar-primary: hsl(178, 84%, 40%);
-  --sidebar-primary-foreground: hsl(220, 27%, 6%);
-  --sidebar-accent: hsl(217.2, 32.6%, 17.5%);
-  --sidebar-accent-foreground: hsl(210, 40%, 98%);
-  --sidebar-border: hsl(217.2, 32.6%, 17.5%);
-  --sidebar-ring: hsl(178, 84%, 40%);
+  /* Sophisticated dark sidebar - Ohio State */
+  --sidebar: hsl(0, 0%, 0%); /* Pure black */
+  --sidebar-foreground: hsl(0, 0%, 98%);
+  --sidebar-primary: hsl(0, 100%, 37%); /* Scarlet */
+  --sidebar-primary-foreground: hsl(0, 0%, 98%);
+  --sidebar-accent: hsl(0, 0%, 30%); /* Dark grey */
+  --sidebar-accent-foreground: hsl(0, 0%, 98%);
+  --sidebar-border: hsl(0, 0%, 25%);
+  --sidebar-ring: hsl(0, 100%, 37%); /* Scarlet */
   
-  /* Premium semantic colors for dark theme - Deep Ocean Tech */
-  --success: hsl(178, 84%, 40%);
-  --success-foreground: hsl(220, 27%, 6%);
-  --warning: hsl(43, 100%, 48%);
-  --warning-foreground: hsl(220, 27%, 6%);
-  --info: hsl(188, 94%, 45%);
-  --info-foreground: hsl(220, 27%, 6%);
+  /* Premium semantic colors for dark theme - Ohio State */
+  --success: hsl(0, 100%, 37%); /* Scarlet */
+  --success-foreground: hsl(0, 0%, 98%);
+  --warning: hsl(0, 0%, 50%); /* Grey */
+  --warning-foreground: hsl(0, 0%, 98%);
+  --info: hsl(0, 0%, 0%); /* Black */
+  --info-foreground: hsl(0, 0%, 98%);
 }
 
 @layer base {

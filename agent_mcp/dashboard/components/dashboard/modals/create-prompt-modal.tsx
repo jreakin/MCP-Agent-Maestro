@@ -164,7 +164,7 @@ export function CreatePromptModal({ open, onOpenChange, onCreatePrompt }: Create
             Create Custom Prompt
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Create your own reusable prompt template for Agent-MCP workflows
+            Create your own reusable prompt template for MCP Maestro workflows
           </DialogDescription>
         </DialogHeader>
         

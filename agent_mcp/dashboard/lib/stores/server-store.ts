@@ -1,20 +1,7 @@
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
+import { persist, PersistStorage } from 'zustand/middleware'
 import { apiClient } from '../api'
 import { config, getAutoDetectServers } from '../config'
-
-// SSR-safe storage for zustand persist
-const getStorage = () => {
-  if (typeof window === 'undefined') {
-    // Return a no-op storage for SSR
-    return {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-    } as any
-  }
-  return createJSONStorage(() => localStorage)
-}
 
 export interface MCPServer {
   id: string
@@ -42,6 +29,27 @@ interface ServerStore {
   disconnectServer: () => void
   autoDetectServers: () => Promise<MCPServer | null>
   clearPersistedData: () => void
+}
+
+// Type for the persisted state (only the fields we persist)
+type PersistedServerStore = {
+  servers: MCPServer[]
+  activeServerId: string | null
+}
+
+// No-op storage for SSR - properly typed for zustand persist with partialized state
+const noOpStorage: PersistStorage<PersistedServerStore> = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+}
+
+// SSR-safe storage - always use no-op during module initialization
+// We'll switch to real localStorage after module loads on client side
+const getStorage = (): any => {
+  // Always return no-op during module initialization to prevent SSR errors
+  // Real storage will be set up in the setTimeout block below
+  return noOpStorage
 }
 
 export const useServerStore = create<ServerStore>()(
@@ -258,12 +266,15 @@ export const useServerStore = create<ServerStore>()(
     }),
     {
       name: 'mcp-server-store',
-      storage: getStorage(),
+      storage: noOpStorage, // Always use no-op initially - will be hydrated on client
       partialize: (state) => ({
         servers: state.servers,
         activeServerId: state.activeServerId
       }),
-      skipHydration: true, // Skip hydration during SSR
+      skipHydration: true, // Skip hydration during SSR - manually hydrate on client
     }
   )
 )
+
+// Client-side hydration will be handled in ApiClientInitializer component
+// This prevents any localStorage access during SSR

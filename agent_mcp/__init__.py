@@ -1,5 +1,6 @@
 """
-Agent-MCP: Multi-Agent Collaboration Protocol for AI software development.
+MCP Agent Maestro: Multi-Agent Collaboration Protocol for AI software development.
+A fork of Agent-MCP created by John R. Eakin.
 
 Copyright (C) 2025 Luis Alejandro Rincon (rinadelph)
 
@@ -17,4 +18,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 """
 
-__version__ = "2.2.0"
+# Version is read from pyproject.toml via core.config
+from .core.config import VERSION
+__version__ = VERSION

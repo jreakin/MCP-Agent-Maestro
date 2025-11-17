@@ -51,6 +51,14 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Mutation testing
+.mutmut-cache/
+
+# Fuzzing corpus and artifacts
+.corpus/
+*.crash
+*.timeout
+
 # Translations
 *.mo
 *.pot

@@ -44,7 +44,7 @@ async def validate_task_placement(
     """
     try:
         # Check if trying to create a root task (no parent)
-        from ...db.connection import get_db_connection
+        from ...db import get_db_connection, return_connection
         root_task_check = ""
         if parent_task_id is None:
             # Check if a root task already exists
@@ -52,7 +52,7 @@ async def validate_task_placement(
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) as count FROM tasks WHERE parent_task IS NULL")
             root_count = cursor.fetchone()['count']
-            conn.close()
+            return_connection(conn)
             
             if root_count > 0:
                 root_task_check = f"""

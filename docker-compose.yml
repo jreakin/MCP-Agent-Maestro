@@ -1,0 +1,130 @@
+# MCP Agent Maestro Docker Compose Configuration
+# 
+# DEPLOYMENT MODES:
+# 1. Standalone: Run this docker-compose.yml directly (creates isolated network)
+# 2. Integrated: Copy services into your project's docker-compose.yml (use your network)
+#    See INTEGRATION_EXAMPLE.yml for integration pattern
+#
+# When integrating into another project:
+# - Change network from 'agent-mcp-network' to your project's network name
+# - Update DB_HOST to match the postgres service name below
+# - Ensure container names are unique (use env vars or prefix with project name)
+# - PostgreSQL port mapping can be removed (only needed for host access)
+
+services:
+  agent-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-agent-maestro:latest
+    container_name: ${AGENT_MCP_CONTAINER_NAME:-agent-mcp}
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - PORT=${PORT:-3000}
+      - AGENT_MCP_API_PORT=${PORT:-3000}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MCP_PROJECT_DIR=/app/project-data
+      # Ollama configuration (connects to host machine - see docs/setup/OLLAMA_HOST_SETUP.md)
+      # Set EMBEDDING_PROVIDER=ollama in .env to use Ollama instead of OpenAI
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-llama3.2}
+      # Database configuration (PostgreSQL only)
+      # When integrating: Change 'postgres' to 'agent-mcp-postgres' if your project has a 'postgres' service
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=5432
+      - DB_NAME=agent_mcp
+      - DB_USER=agent_mcp
+      - DB_PASSWORD=${DB_PASSWORD:-agent_mcp_password}
+    volumes:
+      # Mount project directory for persistence
+      - ./project-data:/app/project-data
+      # Optional: Mount your actual project
+      # - /path/to/your/project:/app/project-data
+      # Test artifacts (mutation testing and fuzzing)
+      - ./.mutmut-cache:/app/.mutmut-cache
+      - ./.corpus:/app/.corpus
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - agent-mcp-network
+    # Enable host.docker.internal for connecting to host Ollama (macOS/Windows/Linux)
+    # This allows the container to access services running on the host machine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ${POSTGRES_CONTAINER_NAME:-maestro-postgres}
+    environment:
+      - POSTGRES_DB=agent_mcp
+      - POSTGRES_USER=agent_mcp
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-agent_mcp_password}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      # Named volume persists all database data across container restarts
+      # Your context, agents, tasks, RAG embeddings, and all data are automatically saved
+      # See docs/setup/DATA_PERSISTENCE.md for backup/restore instructions
+      - ${POSTGRES_VOLUME_NAME:-postgres-data}:/var/lib/postgresql/data
+    ports:
+      # Host port mapping: ${DB_PORT:-5433}:5432
+      # - Internal container port is always 5432 (PostgreSQL standard)
+      # - Host port defaults to 5433 to avoid conflicts with local PostgreSQL
+      # - Set DB_PORT in .env to use a different host port if needed
+      # - Inter-container communication uses service name 'postgres:5432' (not affected by host port)
+      - "${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_mcp -d agent_mcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - agent-mcp-network
+
+  dashboard:
+    build:
+      context: ./agent_mcp/dashboard
+      dockerfile: Dockerfile
+    image: mcp-agent-maestro-dashboard:latest
+    container_name: ${DASHBOARD_CONTAINER_NAME:-maestro-dashboard}
+    ports:
+      - "${DASHBOARD_PORT:-3001}:3000"
+    environment:
+      # Use localhost since browser connects from outside Docker
+      - NEXT_PUBLIC_DEFAULT_SERVER_HOST=localhost
+      - NEXT_PUBLIC_DEFAULT_SERVER_PORT=3000
+      - NEXT_PUBLIC_AUTO_CONNECT=true
+      - NODE_ENV=production
+    depends_on:
+      agent-mcp:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - agent-mcp-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres-data:
+    name: ${POSTGRES_VOLUME_NAME:-postgres-data}
+    driver: local
+
+networks:
+  agent-mcp-network:
+    name: ${DOCKER_NETWORK_NAME:-agent-mcp-network}
+    driver: bridge

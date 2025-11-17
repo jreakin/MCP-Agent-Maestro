@@ -3,18 +3,18 @@ import json
 import datetime
 import secrets  # For task_id generation
 import os  # For request_assistance (notifications path)
-import sqlite3  # For database operations
+import psycopg2  # For database operations
 from pathlib import Path  # For request_assistance
 from typing import List, Dict, Any, Optional
 
 import mcp.types as mcp_types
 
 from .registry import register_tool
-from ..core.config import logger, ENABLE_TASK_PLACEMENT_RAG, ALLOW_RAG_OVERRIDE
+from ..core.config import logger, ENABLE_TASK_PLACEMENT_RAG, ALLOW_RAG_OVERRIDE, get_agent_dir
 from ..core import globals as g
 from ..core.auth import verify_token, get_agent_id
 from ..utils.audit_utils import log_audit
-from ..db.connection import get_db_connection, execute_db_write
+from ..db import get_db_connection, execute_db_write, return_connection
 from ..db.actions.agent_actions_db import log_agent_action_to_db
 from ..features.task_placement.validator import validate_task_placement
 from ..features.task_placement.suggestions import (
@@ -115,7 +115,7 @@ async def _launch_testing_agent_for_completed_task(
         await _send_escape_to_agent(completed_by_agent)
 
         # 2. Get task details for context
-        cursor.execute("SELECT * FROM tasks WHERE task_id = ?", (completed_task_id,))
+        cursor.execute("SELECT * FROM tasks WHERE task_id = %s", (completed_task_id,))
         task_row = cursor.fetchone()
         if not task_row:
             logger.error(f"Cannot find completed task {completed_task_id} for testing")
@@ -132,7 +132,7 @@ async def _launch_testing_agent_for_completed_task(
         # Check if testing agent already exists
         existing_agent = None
         cursor.execute(
-            "SELECT agent_id FROM agents WHERE agent_id = ?", (testing_agent_id,)
+            "SELECT agent_id FROM agents WHERE agent_id = %s", (testing_agent_id,)
         )
         existing_agent = cursor.fetchone()
 
@@ -154,7 +154,7 @@ async def _launch_testing_agent_for_completed_task(
                 del g.active_agents[testing_agent_id]
 
             # Remove from database
-            cursor.execute("DELETE FROM agents WHERE agent_id = ?", (testing_agent_id,))
+            cursor.execute("DELETE FROM agents WHERE agent_id = %s", (testing_agent_id,))
             logger.info(f"Cleaned up existing testing agent {testing_agent_id}")
 
         # 5. Create testing agent token and database entry
@@ -176,7 +176,7 @@ async def _launch_testing_agent_for_completed_task(
             """
             INSERT INTO agents (token, agent_id, capabilities, created_at, status, 
                               current_task, working_directory, color)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 testing_token,
@@ -378,7 +378,7 @@ async def _update_single_task(
     """Helper function to update a single task with smart features"""
 
     # Fetch task current data
-    cursor.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
+    cursor.execute("SELECT * FROM tasks WHERE task_id = %s", (task_id,))
     task_db_row = cursor.fetchone()
     if not task_db_row:
         return {"success": False, "error": f"Task '{task_id}' not found"}
@@ -398,8 +398,8 @@ async def _update_single_task(
     updated_at_iso = datetime.datetime.now().isoformat()
 
     # Build update query
-    update_fields_sql = ["status = ?", "updated_at = ?"]
-    update_params = [new_status, updated_at_iso]
+    update_fields_sql = ["status = %s", "updated_at = CURRENT_TIMESTAMP"]
+    update_params = [new_status]
 
     # Handle notes
     current_notes_list = json.loads(task_current_data.get("notes") or "[]")
@@ -411,25 +411,25 @@ async def _update_single_task(
                 "content": notes_content,
             }
         )
-    update_fields_sql.append("notes = ?")
+    update_fields_sql.append("notes = %s")
     update_params.append(json.dumps(current_notes_list))
 
     # Admin-only field updates
     if is_admin_request:
         if new_title is not None:
-            update_fields_sql.append("title = ?")
+            update_fields_sql.append("title = %s")
             update_params.append(new_title)
         if new_description is not None:
-            update_fields_sql.append("description = ?")
+            update_fields_sql.append("description = %s")
             update_params.append(new_description)
         if new_priority is not None:
-            update_fields_sql.append("priority = ?")
+            update_fields_sql.append("priority = %s")
             update_params.append(new_priority)
         if new_assigned_to is not None:
-            update_fields_sql.append("assigned_to = ?")
+            update_fields_sql.append("assigned_to = %s")
             update_params.append(new_assigned_to)
         if new_depends_on_tasks is not None:
-            update_fields_sql.append("depends_on_tasks = ?")
+            update_fields_sql.append("depends_on_tasks = %s")
             update_params.append(json.dumps(new_depends_on_tasks))
 
     update_params.append(task_id)
@@ -438,14 +438,14 @@ async def _update_single_task(
     if update_fields_sql:
         # Validate all field assignments are safe (contain only expected patterns)
         allowed_field_patterns = [
-            "status = ?",
-            "updated_at = ?",
-            "notes = ?",
-            "title = ?",
-            "description = ?",
-            "priority = ?",
-            "assigned_to = ?",
-            "depends_on_tasks = ?",
+            "status = %s",
+            "updated_at = CURRENT_TIMESTAMP",
+            "notes = %s",
+            "title = %s",
+            "description = %s",
+            "priority = %s",
+            "assigned_to = %s",
+            "depends_on_tasks = %s",
         ]
 
         safe_fields = []
@@ -459,7 +459,7 @@ async def _update_single_task(
 
         if safe_fields:
             set_clause = ", ".join(safe_fields)
-            update_sql = f"UPDATE tasks SET {set_clause} WHERE task_id = ?"
+            update_sql = f"UPDATE tasks SET {set_clause} WHERE task_id = %s"
             cursor.execute(update_sql, tuple(update_params))
 
     # Update in-memory cache
@@ -484,7 +484,7 @@ async def _update_single_task(
         "parent_task"
     ):
         parent_task_id = task_current_data["parent_task"]
-        cursor.execute("SELECT notes FROM tasks WHERE task_id = ?", (parent_task_id,))
+        cursor.execute("SELECT notes FROM tasks WHERE task_id = %s", (parent_task_id,))
         parent_row = cursor.fetchone()
         if parent_row:
             parent_notes_list = json.loads(parent_row["notes"] or "[]")
@@ -496,7 +496,7 @@ async def _update_single_task(
                 }
             )
             cursor.execute(
-                "UPDATE tasks SET notes = ?, updated_at = ? WHERE task_id = ?",
+                "UPDATE tasks SET notes = %s, updated_at = %s WHERE task_id = %s",
                 (json.dumps(parent_notes_list), updated_at_iso, parent_task_id),
             )
             if parent_task_id in g.tasks:
@@ -803,7 +803,7 @@ async def _create_unassigned_tasks(
             raise e
         finally:
             if conn:
-                conn.close()
+                return_connection(conn)
 
     # Execute the write operation through the queue
     try:
@@ -852,7 +852,7 @@ async def _assign_to_existing_tasks(
         cursor = conn.cursor()
 
         # Validate that all tasks exist and are unassigned
-        placeholders = ",".join(["?" for _ in task_ids])
+        placeholders = ",".join(["%s" for _ in task_ids])
         cursor.execute(
             f"SELECT task_id, title, assigned_to FROM tasks WHERE task_id IN ({placeholders})",
             task_ids,
@@ -887,7 +887,7 @@ async def _assign_to_existing_tasks(
 
         # Validate agent exists
         cursor.execute(
-            "SELECT agent_id FROM agents WHERE agent_id = ?", (target_agent_id,)
+            "SELECT agent_id FROM agents WHERE agent_id = %s", (target_agent_id,)
         )
         if not cursor.fetchone():
             return [
@@ -900,7 +900,7 @@ async def _assign_to_existing_tasks(
         updated_at = datetime.datetime.now().isoformat()
         for task_id in task_ids:
             cursor.execute(
-                "UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE task_id = ?",
+                "UPDATE tasks SET assigned_to = %s, updated_at = %s WHERE task_id = %s",
                 (target_agent_id, updated_at, task_id),
             )
 
@@ -918,12 +918,12 @@ async def _assign_to_existing_tasks(
 
         # Update agent's current task if they don't have one (use first task)
         cursor.execute(
-            "SELECT current_task FROM agents WHERE agent_id = ?", (target_agent_id,)
+            "SELECT current_task FROM agents WHERE agent_id = %s", (target_agent_id,)
         )
         agent_row = cursor.fetchone()
         if agent_row and agent_row["current_task"] is None:
             cursor.execute(
-                "UPDATE agents SET current_task = ?, updated_at = ? WHERE agent_id = ?",
+                "UPDATE agents SET current_task = %s, updated_at = %s WHERE agent_id = %s",
                 (task_ids[0], updated_at, target_agent_id),
             )
 
@@ -953,7 +953,7 @@ async def _assign_to_existing_tasks(
         return [mcp_types.TextContent(type="text", text=f"Error assigning tasks: {e}")]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 async def _create_and_assign_multiple_tasks(
@@ -972,7 +972,7 @@ async def _create_and_assign_multiple_tasks(
 
         # Validate agent exists
         cursor.execute(
-            "SELECT agent_id FROM agents WHERE agent_id = ?", (target_agent_id,)
+            "SELECT agent_id FROM agents WHERE agent_id = %s", (target_agent_id,)
         )
         if not cursor.fetchone():
             return [
@@ -1039,12 +1039,12 @@ async def _create_and_assign_multiple_tasks(
 
         # Update agent's current task if they don't have one (use first task)
         cursor.execute(
-            "SELECT current_task FROM agents WHERE agent_id = ?", (target_agent_id,)
+            "SELECT current_task FROM agents WHERE agent_id = %s", (target_agent_id,)
         )
         agent_row = cursor.fetchone()
         if agent_row and agent_row["current_task"] is None and created_tasks:
             cursor.execute(
-                "UPDATE agents SET current_task = ?, updated_at = ? WHERE agent_id = ?",
+                "UPDATE agents SET current_task = %s, updated_at = %s WHERE agent_id = %s",
                 (created_tasks[0]["task_id"], created_at, target_agent_id),
             )
 
@@ -1079,7 +1079,7 @@ async def _create_and_assign_multiple_tasks(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- assign_task tool ---
@@ -1137,11 +1137,11 @@ async def assign_task_tool_impl(
     try:
         # Find agent by token
         cursor.execute(
-            "SELECT agent_id FROM agents WHERE token = ?", (target_agent_token,)
+            "SELECT agent_id FROM agents WHERE token = %s", (target_agent_token,)
         )
         agent_row = cursor.fetchone()
         if not agent_row:
-            conn.close()
+            return_connection(conn)
             return [
                 mcp_types.TextContent(
                     type="text",
@@ -1153,7 +1153,7 @@ async def assign_task_tool_impl(
 
         # Prevent admin agents from being assigned tasks
         if target_agent_id.lower().startswith("admin"):
-            conn.close()
+            return_connection(conn)
             return [
                 mcp_types.TextContent(
                     type="text",
@@ -1162,11 +1162,11 @@ async def assign_task_tool_impl(
             ]
 
     except Exception as e:
-        conn.close()
+        return_connection(conn)
         logger.error(f"Error validating agent token: {e}", exc_info=True)
         return [mcp_types.TextContent(type="text", text=f"Error validating agent: {e}")]
     finally:
-        conn.close()
+        return_connection(conn)
 
     # Determine operation mode and validate parameters (when agent_token provided)
     if task_ids:
@@ -1266,7 +1266,7 @@ async def assign_task_tool_impl(
                         """
                         SELECT task_id, title, status 
                         FROM tasks 
-                        WHERE status IN ('pending', 'in_progress') AND assigned_to = ?
+                        WHERE status IN ('pending', 'in_progress') AND assigned_to = %s
                         ORDER BY updated_at DESC
                         LIMIT 3
                     """,
@@ -1291,7 +1291,7 @@ async def assign_task_tool_impl(
                     FROM tasks 
                     WHERE status IN ('pending', 'in_progress')
                     ORDER BY 
-                        CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,
+                        CASE WHEN assigned_to = %s THEN 0 ELSE 1 END,
                         created_at DESC
                     LIMIT 5
                 """,
@@ -1303,7 +1303,7 @@ async def assign_task_tool_impl(
                 for task in suggestions:
                     suggestion_text += f"  - {task['task_id']}: {task['title']} (status: {task['status']})\n"
 
-            conn.close()
+            return_connection(conn)
 
             return [
                 mcp_types.TextContent(
@@ -1316,7 +1316,7 @@ async def assign_task_tool_impl(
                 )
             ]
 
-        conn.close()
+        return_connection(conn)
 
     conn = None
     try:
@@ -1334,7 +1334,7 @@ async def assign_task_tool_impl(
 
         if not agent_exists_in_memory:
             cursor.execute(
-                "SELECT token FROM agents WHERE agent_id = ? AND status != ?",
+                "SELECT token FROM agents WHERE agent_id = %s AND status != %s",
                 (target_agent_id, "terminated"),
             )
             row = cursor.fetchone()
@@ -1534,7 +1534,7 @@ async def assign_task_tool_impl(
                 should_update_agent_current_task = True
         else:  # Agent not in active memory, check DB
             cursor.execute(
-                "SELECT current_task FROM agents WHERE agent_id = ?", (target_agent_id,)
+                "SELECT current_task FROM agents WHERE agent_id = %s", (target_agent_id,)
             )
             agent_row = cursor.fetchone()
             if agent_row and agent_row["current_task"] is None:
@@ -1542,7 +1542,7 @@ async def assign_task_tool_impl(
 
         if should_update_agent_current_task:
             cursor.execute(
-                "UPDATE agents SET current_task = ?, updated_at = ? WHERE agent_id = ?",
+                "UPDATE agents SET current_task = %s, updated_at = %s WHERE agent_id = %s",
                 (new_task_id, created_at_iso, target_agent_id),
             )
 
@@ -1648,7 +1648,7 @@ async def assign_task_tool_impl(
 
         return [mcp_types.TextContent(type="text", text="\n".join(response_parts))]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(
@@ -1674,7 +1674,7 @@ async def assign_task_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- create_self_task tool ---
@@ -1724,7 +1724,7 @@ async def create_self_task_tool_impl(
             cursor.execute(
                 """
                 SELECT task_id, title FROM tasks 
-                WHERE assigned_to = ? OR created_by = ?
+                WHERE assigned_to = %s OR created_by = %s
                 ORDER BY created_at DESC LIMIT 1
             """,
                 (requesting_agent_id, requesting_agent_id),
@@ -1862,7 +1862,7 @@ async def create_self_task_tool_impl(
             requesting_agent_id != "admin"
         ):  # If not admin and not in active_agents (e.g. loaded from DB only)
             cursor.execute(
-                "SELECT current_task FROM agents WHERE agent_id = ?",
+                "SELECT current_task FROM agents WHERE agent_id = %s",
                 (requesting_agent_id,),
             )
             agent_row = cursor.fetchone()
@@ -1872,7 +1872,7 @@ async def create_self_task_tool_impl(
 
         if should_update_agent_current_task and requesting_agent_id != "admin":
             cursor.execute(
-                "UPDATE agents SET current_task = ?, updated_at = ? WHERE agent_id = ?",
+                "UPDATE agents SET current_task = %s, updated_at = %s WHERE agent_id = %s",
                 (new_task_id, created_at_iso, requesting_agent_id),
             )
 
@@ -1922,7 +1922,7 @@ async def create_self_task_tool_impl(
 
         return [mcp_types.TextContent(type="text", text=response_text)]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(
@@ -1948,7 +1948,7 @@ async def create_self_task_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- update_task_status tool ---
@@ -2099,7 +2099,7 @@ async def update_task_status_tool_impl(
                                     dep_id != result["task_id"]
                                 ):  # Skip the one we just completed
                                     cursor.execute(
-                                        "SELECT status FROM tasks WHERE task_id = ?",
+                                        "SELECT status FROM tasks WHERE task_id = %s",
                                         (dep_id,),
                                     )
                                     dep_row = cursor.fetchone()
@@ -2110,7 +2110,7 @@ async def update_task_status_tool_impl(
                             if all_deps_completed:
                                 # Auto-update dependent task to in_progress if it's pending
                                 cursor.execute(
-                                    "SELECT status FROM tasks WHERE task_id = ?",
+                                    "SELECT status FROM tasks WHERE task_id = %s",
                                     (task_row["task_id"],),
                                 )
                                 dependent_task = cursor.fetchone()
@@ -2235,7 +2235,7 @@ async def update_task_status_tool_impl(
 
         return [mcp_types.TextContent(type="text", text="\n".join(response_parts))]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(f"Database error updating tasks: {e_sql}", exc_info=True)
@@ -2255,7 +2255,7 @@ async def update_task_status_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- view_tasks tool ---
@@ -2673,7 +2673,7 @@ def _analyze_agent_workload(cursor, agent_id: str) -> Dict[str, Any]:
         """
         SELECT task_id, title, status, priority, created_at, updated_at 
         FROM tasks 
-        WHERE assigned_to = ? AND status IN ('pending', 'in_progress')
+        WHERE assigned_to = %s AND status IN ('pending', 'in_progress')
         ORDER BY priority DESC, created_at ASC
     """,
         (agent_id,),
@@ -2768,7 +2768,7 @@ def _suggest_optimal_parent_task(
         """
         SELECT task_id, title, description, status, priority 
         FROM tasks 
-        WHERE assigned_to = ? AND status IN ('pending', 'in_progress')
+        WHERE assigned_to = %s AND status IN ('pending', 'in_progress')
         ORDER BY 
             CASE WHEN status = 'in_progress' THEN 1 ELSE 2 END,
             CASE priority WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END DESC,
@@ -2856,7 +2856,7 @@ async def request_assistance_tool_impl(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM tasks WHERE task_id = ?", (parent_task_id,))
+        cursor.execute("SELECT * FROM tasks WHERE task_id = %s", (parent_task_id,))
         parent_task_db_row = cursor.fetchone()
         if not parent_task_db_row:
             return [
@@ -2909,7 +2909,7 @@ async def request_assistance_tool_impl(
         else:
             try:
                 notifications_pending_dir = (
-                    Path(project_dir_env) / ".agent" / "notifications" / "pending"
+                    get_agent_dir() / "notifications" / "pending"
                 )
                 notifications_pending_dir.mkdir(parents=True, exist_ok=True)
                 notification_file_path = (
@@ -2968,7 +2968,7 @@ async def request_assistance_tool_impl(
         )
 
         cursor.execute(
-            "UPDATE tasks SET child_tasks = ?, notes = ?, updated_at = ? WHERE task_id = ?",
+            "UPDATE tasks SET child_tasks = %s, notes = %s, updated_at = %s WHERE task_id = %s",
             (
                 json.dumps(parent_child_tasks_list),
                 json.dumps(parent_notes_list),
@@ -3057,7 +3057,7 @@ async def request_assistance_tool_impl(
             )
         ]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(
@@ -3083,7 +3083,7 @@ async def request_assistance_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- bulk_task_operations tool ---
@@ -3137,7 +3137,7 @@ async def bulk_task_operations_tool_impl(
                 continue
 
             # Verify task exists and permissions
-            cursor.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
+            cursor.execute("SELECT * FROM tasks WHERE task_id = %s", (task_id,))
             task_row = cursor.fetchone()
             if not task_row:
                 results.append(f"Operation {i+1}: Task '{task_id}' not found")
@@ -3180,8 +3180,8 @@ async def bulk_task_operations_tool_impl(
                         continue
 
                     # Update status
-                    update_fields = ["status = ?", "updated_at = ?"]
-                    update_params = [new_status, updated_at_iso]
+                    update_fields = ["status = %s", "updated_at = CURRENT_TIMESTAMP"]
+                    update_params = [new_status]
 
                     # Handle notes
                     current_notes = json.loads(task_data.get("notes") or "[]")
@@ -3193,13 +3193,13 @@ async def bulk_task_operations_tool_impl(
                                 "content": notes_content,
                             }
                         )
-                    update_fields.append("notes = ?")
+                    update_fields.append("notes = %s")
                     update_params.append(json.dumps(current_notes))
 
                     update_params.append(task_id)
 
                     # Validate field assignments for security
-                    allowed_bulk_fields = ["status = ?", "updated_at = ?", "notes = ?"]
+                    allowed_bulk_fields = ["status = %s", "updated_at = CURRENT_TIMESTAMP", "notes = %s"]
                     safe_fields = [
                         field for field in update_fields if field in allowed_bulk_fields
                     ]
@@ -3207,7 +3207,7 @@ async def bulk_task_operations_tool_impl(
                     if safe_fields:
                         set_clause = ", ".join(safe_fields)
                         bulk_update_sql = (
-                            f"UPDATE tasks SET {set_clause} WHERE task_id = ?"
+                            f"UPDATE tasks SET {set_clause} WHERE task_id = %s"
                         )
                         cursor.execute(bulk_update_sql, tuple(update_params))
 
@@ -3235,7 +3235,7 @@ async def bulk_task_operations_tool_impl(
                         continue
 
                     cursor.execute(
-                        "UPDATE tasks SET priority = ?, updated_at = ? WHERE task_id = ?",
+                        "UPDATE tasks SET priority = %s, updated_at = %s WHERE task_id = %s",
                         (new_priority, updated_at_iso, task_id),
                     )
 
@@ -3266,7 +3266,7 @@ async def bulk_task_operations_tool_impl(
                     )
 
                     cursor.execute(
-                        "UPDATE tasks SET notes = ?, updated_at = ? WHERE task_id = ?",
+                        "UPDATE tasks SET notes = %s, updated_at = %s WHERE task_id = %s",
                         (json.dumps(current_notes), updated_at_iso, task_id),
                     )
 
@@ -3286,7 +3286,7 @@ async def bulk_task_operations_tool_impl(
                         continue
 
                     cursor.execute(
-                        "UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE task_id = ?",
+                        "UPDATE tasks SET assigned_to = %s, updated_at = %s WHERE task_id = %s",
                         (new_assigned_to, updated_at_iso, task_id),
                     )
 
@@ -3336,7 +3336,7 @@ async def bulk_task_operations_tool_impl(
         )
         return [mcp_types.TextContent(type="text", text=response_text)]
 
-    except sqlite3.Error as e_sql:
+    except psycopg2.Error as e_sql:
         if conn:
             conn.rollback()
         logger.error(f"Database error in bulk task operations: {e_sql}", exc_info=True)
@@ -3356,7 +3356,7 @@ async def bulk_task_operations_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # --- search_tasks tool ---
@@ -4028,7 +4028,7 @@ async def delete_task_tool_impl(
         cursor = conn.cursor()
 
         # Check if task exists
-        cursor.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
+        cursor.execute("SELECT * FROM tasks WHERE task_id = %s", (task_id,))
         task_row = cursor.fetchone()
 
         if not task_row:
@@ -4055,7 +4055,7 @@ async def delete_task_tool_impl(
 
         # Check for tasks that depend on this one
         cursor.execute(
-            "SELECT task_id, title FROM tasks WHERE json_extract(depends_on_tasks, '$') LIKE ?",
+            "SELECT task_id, title FROM tasks WHERE json_extract(depends_on_tasks, '$') LIKE %s",
             (f'%"{task_id}"%',),
         )
         dependent_tasks = cursor.fetchall()
@@ -4078,7 +4078,7 @@ async def delete_task_tool_impl(
         if task_data.get("parent_task"):
             parent_id = task_data["parent_task"]
             cursor.execute(
-                "SELECT child_tasks FROM tasks WHERE task_id = ?", (parent_id,)
+                "SELECT child_tasks FROM tasks WHERE task_id = %s", (parent_id,)
             )
             parent_row = cursor.fetchone()
 
@@ -4087,7 +4087,7 @@ async def delete_task_tool_impl(
                 if task_id in parent_children:
                     parent_children.remove(task_id)
                     cursor.execute(
-                        "UPDATE tasks SET child_tasks = ?, updated_at = ? WHERE task_id = ?",
+                        "UPDATE tasks SET child_tasks = %s, updated_at = %s WHERE task_id = %s",
                         (
                             json.dumps(parent_children),
                             datetime.datetime.now().isoformat(),
@@ -4101,7 +4101,7 @@ async def delete_task_tool_impl(
         # Handle child tasks
         if child_tasks and force_delete:
             for child_id in child_tasks:
-                cursor.execute("DELETE FROM tasks WHERE task_id = ?", (child_id,))
+                cursor.execute("DELETE FROM tasks WHERE task_id = %s", (child_id,))
                 if cursor.rowcount > 0:
                     cascade_operations.append(f"Deleted child task '{child_id}'")
 
@@ -4110,7 +4110,7 @@ async def delete_task_tool_impl(
             for dep_row in dependent_tasks:
                 dep_id = dep_row["task_id"]
                 cursor.execute(
-                    "SELECT depends_on_tasks FROM tasks WHERE task_id = ?", (dep_id,)
+                    "SELECT depends_on_tasks FROM tasks WHERE task_id = %s", (dep_id,)
                 )
                 dep_task_row = cursor.fetchone()
 
@@ -4121,7 +4121,7 @@ async def delete_task_tool_impl(
                     if task_id in dep_dependencies:
                         dep_dependencies.remove(task_id)
                         cursor.execute(
-                            "UPDATE tasks SET depends_on_tasks = ?, updated_at = ? WHERE task_id = ?",
+                            "UPDATE tasks SET depends_on_tasks = %s, updated_at = %s WHERE task_id = %s",
                             (
                                 json.dumps(dep_dependencies),
                                 datetime.datetime.now().isoformat(),
@@ -4133,7 +4133,7 @@ async def delete_task_tool_impl(
                         )
 
         # Delete the main task
-        cursor.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
+        cursor.execute("DELETE FROM tasks WHERE task_id = %s", (task_id,))
 
         if cursor.rowcount == 0:
             return [
@@ -4182,7 +4182,7 @@ async def delete_task_tool_impl(
         ]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 # Call registration when this module is imported

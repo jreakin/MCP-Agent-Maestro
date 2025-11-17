@@ -31,6 +31,14 @@ from . import rag_tools
 from . import utility_tools
 from . import agent_communication_tools
 
+# PydanticAI tools are optional - only register if pydantic-ai is installed
+try:
+    from . import pydanticai_tools  # PydanticAI-based structured tools
+    logger.info("PydanticAI tools registered (pydantic-ai is installed)")
+except ImportError as e:
+    logger.info(f"PydanticAI tools not available (pydantic-ai not installed): {e}")
+    logger.info("Install with: uv pip install -e '.[pydantic-ai]' or uv sync --extra pydantic-ai")
+
 # After all imports, the tool registry in tools.registry should be populated.
 # We can optionally add a log here to confirm, or check the registry's state.
 from .registry import tool_schemas, tool_implementations

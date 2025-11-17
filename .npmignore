@@ -1,0 +1,96 @@
+# Development files
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+test_*.py
+*_test.py
+tests/
+testing-suite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Documentation (keep README and LICENSE)
+docs/
+*.md
+!README.md
+!LICENSE
+
+# Node modules (if any in root)
+node_modules/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Dashboard source (built dashboard goes in agent_mcp/dashboard/.next)
+agent_mcp/dashboard/.next/
+agent_mcp/dashboard/node_modules/
+agent_mcp/dashboard/.env*
+agent_mcp/dashboard/tsconfig.json
+agent_mcp/dashboard/next.config.ts
+agent_mcp/dashboard/postcss.config.mjs
+agent_mcp/dashboard/eslint.config.mjs
+agent_mcp/dashboard/components.json
+
+# Project data
+project-data/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Lock files (keep package-lock.json for npm)
+uv.lock
+poetry.lock
+Pipfile.lock
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Miscellaneous
+*.tmp
+*.bak
+*.swp
+.cache/

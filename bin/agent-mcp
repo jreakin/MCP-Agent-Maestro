@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+/**
+ * Agent-MCP CLI binary wrapper
+ * Routes to Python CLI implementation
+ */
+
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+const projectRoot = __dirname.replace(/[\\/]bin$/, '');
+const pythonScript = path.join(projectRoot, 'agent_mcp', 'cli.py');
+
+// Determine Python executable
+let pythonCmd = 'python';
+try {
+  require('child_process').execSync('python --version', { stdio: 'ignore' });
+} catch (e) {
+  pythonCmd = 'python3';
+}
+
+// Check if virtual environment exists
+const venvPython = process.platform === 'win32'
+  ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+  : path.join(projectRoot, '.venv', 'bin', 'python');
+
+if (fs.existsSync(venvPython)) {
+  pythonCmd = venvPython;
+} else {
+  // Try uv run
+  try {
+    require('child_process').execSync('uv --version', { stdio: 'ignore' });
+    const args = process.argv.slice(2);
+    const uvProcess = spawn('uv', ['run', '-m', 'agent_mcp.cli', ...args], {
+      cwd: projectRoot,
+      stdio: 'inherit',
+      shell: true
+    });
+    uvProcess.on('exit', (code) => process.exit(code || 0));
+    return;
+  } catch (e) {
+    // Fall through to regular Python
+  }
+}
+
+// Run Python CLI
+const args = process.argv.slice(2);
+const pythonProcess = spawn(pythonCmd, ['-m', 'agent_mcp.cli', ...args], {
+  cwd: projectRoot,
+  stdio: 'inherit',
+  shell: true
+});
+
+pythonProcess.on('exit', (code) => {
+  process.exit(code || 0);
+});
+

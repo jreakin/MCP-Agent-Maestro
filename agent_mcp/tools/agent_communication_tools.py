@@ -2,7 +2,7 @@
 import json
 import datetime
 import secrets
-import sqlite3
+import psycopg2
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import os
@@ -14,7 +14,7 @@ from ..core.config import logger
 from ..core import globals as g
 from ..core.auth import verify_token, get_agent_id
 from ..utils.audit_utils import log_audit
-from ..db.connection import get_db_connection
+from ..db import get_db_connection, return_connection
 from ..db.actions.agent_actions_db import log_agent_action_to_db
 from ..utils.tmux_utils import send_prompt_async, session_exists, sanitize_session_name, send_command_to_session
 
@@ -120,7 +120,7 @@ async def send_agent_message_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
         cursor.execute("""
             INSERT INTO agent_messages (message_id, sender_id, recipient_id, message_content, 
                                       message_type, priority, timestamp, delivered, read)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (message_id, sender_id, recipient_id, message_content, message_type, 
               priority, timestamp, False, False))
         
@@ -160,7 +160,7 @@ async def send_agent_message_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
                                 logger.error(f"Failed to send stop command: {result.stderr}")
                             
                             # Mark as delivered in database
-                            cursor.execute("UPDATE agent_messages SET delivered = ? WHERE message_id = ?", 
+                            cursor.execute("UPDATE agent_messages SET delivered = %s WHERE message_id = %s", 
                                          (success, message_id))
                                          
                         except Exception as e:
@@ -176,7 +176,7 @@ async def send_agent_message_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
                             delivery_status = "delivered_tmux"
                             
                             # Mark as delivered in database
-                            cursor.execute("UPDATE agent_messages SET delivered = ? WHERE message_id = ?", 
+                            cursor.execute("UPDATE agent_messages SET delivered = %s WHERE message_id = %s", 
                                          (True, message_id))
                             
                         except Exception as e:
@@ -225,7 +225,7 @@ async def send_agent_message_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
         
         return [mcp_types.TextContent(type="text", text=response_text)]
         
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         if conn: conn.rollback()
         logger.error(f"Database error sending message: {e}", exc_info=True)
         return [mcp_types.TextContent(type="text", text=f"Database error sending message: {e}")]
@@ -235,7 +235,7 @@ async def send_agent_message_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
         return [mcp_types.TextContent(type="text", text=f"Unexpected error sending message: {e}")]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 async def get_agent_messages_tool_impl(arguments: Dict[str, Any]) -> List[mcp_types.TextContent]:
@@ -273,23 +273,23 @@ async def get_agent_messages_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
         query_params = []
         
         if include_received and include_sent:
-            query_conditions.append("(recipient_id = ? OR sender_id = ?)")
+            query_conditions.append("(recipient_id = %s OR sender_id = %s)")
             query_params.extend([agent_id, agent_id])
         elif include_received:
-            query_conditions.append("recipient_id = ?")
+            query_conditions.append("recipient_id = %s")
             query_params.append(agent_id)
         elif include_sent:
-            query_conditions.append("sender_id = ?")
+            query_conditions.append("sender_id = %s")
             query_params.append(agent_id)
         else:
             return [mcp_types.TextContent(type="text", text="Error: Must include sent or received messages")]
         
         if message_type_filter:
-            query_conditions.append("message_type = ?")
+            query_conditions.append("message_type = %s")
             query_params.append(message_type_filter)
         
         if unread_only:
-            query_conditions.append("read = ?")
+            query_conditions.append("read = %s")
             query_params.append(False)
         
         where_clause = " AND ".join(query_conditions)
@@ -300,7 +300,7 @@ async def get_agent_messages_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
             FROM agent_messages 
             WHERE {where_clause}
             ORDER BY timestamp DESC 
-            LIMIT ?
+            LIMIT %s
         """
         query_params.append(limit)
         
@@ -312,8 +312,8 @@ async def get_agent_messages_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
             message_ids_to_mark = [msg["message_id"] for msg in messages 
                                  if msg["recipient_id"] == agent_id and not msg["read"]]
             if message_ids_to_mark:
-                placeholders = ",".join("?" * len(message_ids_to_mark))
-                cursor.execute(f"UPDATE agent_messages SET read = ? WHERE message_id IN ({placeholders})", 
+                placeholders = ",".join("%s" * len(message_ids_to_mark))
+                cursor.execute(f"UPDATE agent_messages SET read = %s WHERE message_id IN ({placeholders})", 
                              [True] + message_ids_to_mark)
                 conn.commit()
         
@@ -343,7 +343,7 @@ async def get_agent_messages_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
         
         return [mcp_types.TextContent(type="text", text="\n".join(response_lines))]
         
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"Database error retrieving messages: {e}", exc_info=True)
         return [mcp_types.TextContent(type="text", text=f"Database error retrieving messages: {e}")]
     except Exception as e:
@@ -351,7 +351,7 @@ async def get_agent_messages_tool_impl(arguments: Dict[str, Any]) -> List[mcp_ty
         return [mcp_types.TextContent(type="text", text=f"Unexpected error retrieving messages: {e}")]
     finally:
         if conn:
-            conn.close()
+            return_connection(conn)
 
 
 async def broadcast_admin_message_tool_impl(arguments: Dict[str, Any]) -> List[mcp_types.TextContent]:

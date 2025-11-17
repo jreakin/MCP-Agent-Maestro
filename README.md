@@ -1,10 +1,8 @@
-# Agent-MCP
+# MCP Agent Maestro
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/rinadelph/Agent-MCP)
-
-> 🚀 **Advanced Tool Notice**: This framework is designed for experienced AI developers who need sophisticated multi-agent orchestration capabilities. Agent-MCP requires familiarity with AI coding workflows, MCP protocols, and distributed systems concepts. We're actively working to improve documentation and ease of use. If you're new to AI-assisted development, consider starting with simpler tools and returning when you need advanced multi-agent capabilities.
+> 🚀 **Advanced Tool Notice**: This framework is designed for experienced AI developers who need sophisticated multi-agent orchestration capabilities. MCP Agent Maestro requires familiarity with AI coding workflows, MCP protocols, and distributed systems concepts. We're actively working to improve documentation and ease of use. If you're new to AI-assisted development, consider starting with simpler tools and returning when you need advanced multi-agent capabilities.
 >
-> 💬 **Join the Community**: Connect with us on [Discord](https://discord.gg/7Jm7nrhjGn) to get help, share experiences, and collaborate with other developers building multi-agent systems.
+> 📦 **Fork Information**: This is a fork of [Agent-MCP](https://github.com/rinadelph/Agent-MCP) created by John R. Eakin ([github.com/jreakin](https://github.com/jreakin)). For the original project, visit the [Agent-MCP repository](https://github.com/rinadelph/Agent-MCP).
 
 Multi-Agent Collaboration Protocol for coordinated AI software development.
 
@@ -25,7 +23,7 @@ Beyond the philosophical issues, traditional AI coding assistants hit practical 
 
 ## The Multi-Agent Solution
 
-Agent-MCP transforms AI development from a single assistant to a coordinated team:
+MCP Agent Maestro transforms AI development from a single assistant to a coordinated team:
 
 <div align="center">
   <img src="assets/images/dashboard-overview.png" alt="Multi-Agent Collaboration Network" width="800">
@@ -56,12 +54,90 @@ Monitor every agent's status, assigned tasks, and recent activity. The system au
 
 ## Quick Start
 
-### Python Implementation (Recommended)
+### One-Command Setup (Easiest!) ⚡
+
+The **easiest way** to get started is with our interactive setup script:
+
+```bash
+# Clone the repository
+git clone https://github.com/jreakin/mcp-agent-maestro.git
+cd mcp-agent-maestro
+
+# Run interactive setup (detects everything automatically!)
+./scripts/setup.sh
+```
+
+The setup script will:
+- ✅ Check prerequisites (Docker, Docker Compose, Node.js, Python)
+- ✅ Auto-detect available AI providers (OpenAI API key or Ollama)
+- ✅ Configure everything interactively
+- ✅ Create `.env` file automatically
+- ✅ Start all services (backend + dashboard + database)
+- ✅ Open the dashboard in your browser
+
+**That's it!** MCP Agent Maestro is now running with:
+- **Dashboard UI:** http://localhost:3000
+- **Backend API:** http://localhost:8080
+- **API Docs:** http://localhost:8080/docs
+
+See [Quick Start Guide](./QUICK_START.md) for more details.
+
+### Test Run (See It in Action!) 🧪
+
+Want to quickly see the dashboard with sample data?
+
+```bash
+# Start everything with test data
+./scripts/test-run.sh --seed
+```
+
+This starts all services and populates the dashboard with sample agents, tasks, and context. Perfect for exploring the UI!
+
+See [Test Run Guide](./TEST_RUN_GUIDE.md) for details.
+
+### Alternative: Python CLI Setup
+
+```bash
+# Install MCP Agent Maestro
+uv pip install -e .
+
+# Run interactive setup
+uv run -m agent_mcp.cli setup
+
+# Check your setup
+uv run -m agent_mcp.cli doctor
+```
+
+### Docker Compose (Manual Setup)
+
+For manual setup without the wizard:
+
+```bash
+# Create .env file with your OpenAI API key
+echo "OPENAI_API_KEY=sk-your-key-here" > .env
+echo "DB_PASSWORD=your_secure_password" >> .env
+
+# Start all services (Backend + Dashboard + PostgreSQL)
+docker-compose up -d
+
+# Access:
+# - Dashboard UI: http://localhost:3000
+# - Backend API: http://localhost:8080
+# - API Docs: http://localhost:8080/docs
+```
+
+**All services start automatically** - no need to run the dashboard separately!
+
+See [Quick Start Guide](./docs/setup/QUICK_START.md) for detailed manual instructions.
+
+### Python Implementation (Local Development)
+
+For local development without Docker:
 
 ```bash
 # Clone and setup
-git clone https://github.com/rinadelph/Agent-MCP.git
-cd Agent-MCP
+git clone https://github.com/jreakin/mcp-agent-maestro.git
+cd mcp-agent-maestro
 
 # Check version requirements
 python --version  # Should be >=3.10
@@ -83,12 +159,14 @@ uv run -m agent_mcp.cli --port 8080 --project-dir path-to-directory
 cd agent_mcp/dashboard && npm install && npm run dev
 ```
 
+**Note**: Local development requires a PostgreSQL database. See [DOCKER_SETUP.md](./DOCKER_SETUP.md) for database setup options.
+
 ### Node.js/TypeScript Implementation (Alternative)
 
 ```bash
 # Clone and setup
-git clone https://github.com/rinadelph/Agent-MCP.git
-cd Agent-MCP/agent-mcp-node
+git clone https://github.com/jreakin/mcp-agent-maestro.git
+cd mcp-agent-maestro/agent-mcp-node
 
 # Install dependencies
 npm install
@@ -786,7 +864,10 @@ Run memory garbage collection through the dashboard or restart with `--refresh-m
 
 ## Documentation
 
+- [Setup Guide](./docs/setup/README.md) - **Start here!** Complete installation and setup instructions
 - [Getting Started Guide](./docs/getting-started.md) - Complete walkthrough with examples
+- [Configuration Guide](./docs/setup/CONFIGURATION.md) - Configuration reference
+- [Troubleshooting Guide](./docs/setup/TROUBLESHOOTING.md) - Common issues and solutions
 - [MCD Creation Guide](./docs/mcd-guide.md) - Write effective project blueprints
 - [Theoretical Foundation](./docs/chapter-1-cognitive-empathy.md) - Understanding AI cognition
 - [Architecture Overview](./docs/architecture.md) - System design and components
@@ -795,9 +876,9 @@ Run memory garbage collection through the dashboard or restart with `--refresh-m
 ## Community and Support
 
 **Get Help**
-- [Discord Community](https://discord.gg/7Jm7nrhjGn) - Active developer discussions
-- [GitHub Issues](https://github.com/rinadelph/Agent-MCP/issues) - Bug reports and features
-- [Discussions](https://github.com/rinadelph/Agent-MCP/discussions) - Share your experiences
+- [Discord Community](https://discord.gg/7Jm7nrhjGn) - Active developer discussions (original Agent-MCP community)
+- [GitHub Issues](https://github.com/jreakin/mcp-agent-maestro/issues) - Bug reports and features for this fork
+- [Original Project Issues](https://github.com/rinadelph/Agent-MCP/issues) - Issues for the original Agent-MCP project
 
 **Contributing**
 We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for:
