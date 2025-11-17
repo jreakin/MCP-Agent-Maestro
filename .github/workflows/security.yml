@@ -2,9 +2,9 @@ name: Security
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/port-3000-default ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/port-3000-default ]
   schedule:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'

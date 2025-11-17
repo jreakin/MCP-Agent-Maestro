@@ -2,11 +2,11 @@ name: Docker Build and Push
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/port-3000-default ]
     tags:
       - 'v*.*.*'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/port-3000-default ]
   workflow_dispatch:
 
 env:
@@ -48,6 +48,7 @@ jobs:
           type=sha,prefix={{branch}}-
     
     - name: Build and push Docker image
+      id: build-and-push
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -60,5 +61,5 @@ jobs:
         platforms: linux/amd64,linux/arm64
     
     - name: Image digest
-      run: echo "Image pushed with digest ${{ steps.build.outputs.digest }}"
+      run: echo "Image pushed with digest ${{ steps.build-and-push.outputs.digest }}"
 

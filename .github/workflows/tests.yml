@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     
     services:
       postgres:
@@ -50,6 +53,9 @@ jobs:
         echo "AGENT_MCP_API_PORT=8080" >> $GITHUB_ENV
         echo "AGENT_MCP_DASHBOARD_PORT=3001" >> $GITHUB_ENV
     
+    - name: Install PostgreSQL client
+      run: sudo apt-get update && sudo apt-get install -y postgresql-client
+    
     - name: Wait for PostgreSQL
       run: |
         until pg_isready -h localhost -p 5432 -U agent_mcp; do
@@ -61,16 +67,10 @@ jobs:
       run: |
         python3 -c "from agent_mcp.db.postgres_schema import init_database; init_database()"
     
-    - name: Run tests (excluding benchmarks)
-      run: uv run pytest tests/ --ignore=tests/benchmarks -v --tb=short
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-test123456789012345678901234567890' }}
-        EMBEDDING_PROVIDER: ollama
-    
     - name: Run tests with coverage
       id: test_coverage
       run: |
-        uv run pytest tests/ --ignore=tests/benchmarks --cov=agent_mcp --cov-report=xml --cov-report=html --cov-report=term -v | tee pytest_output.txt
+        uv run pytest tests/ --ignore=tests/benchmarks --cov=agent_mcp --cov-report=xml --cov-report=html --cov-report=term -v --tb=short | tee pytest_output.txt
         # Extract test statistics
         PASSED=$(grep -oP '\d+(?=\s+passed)' pytest_output.txt | head -1 || echo "0")
         FAILED=$(grep -oP '\d+(?=\s+failed)' pytest_output.txt | head -1 || echo "0")
@@ -95,7 +95,8 @@ jobs:
         else
           git add README.md
           git commit -m "docs: Update test statistics in README [skip ci]" || echo "No changes to commit"
-          git push || echo "Failed to push README update"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git push origin HEAD:main || echo "Failed to push README update"
         fi
       continue-on-error: true
       env:

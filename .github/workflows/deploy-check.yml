@@ -73,6 +73,9 @@ jobs:
     - name: Create project directory
       run: mkdir -p /tmp/test-project
     
+    - name: Install PostgreSQL client
+      run: sudo apt-get update && sudo apt-get install -y postgresql-client
+    
     - name: Wait for PostgreSQL
       run: |
         until pg_isready -h localhost -p 5432 -U agent_mcp; do
@@ -86,9 +89,9 @@ jobs:
     
     - name: Start API server in background
       run: |
-        uv run -m agent_mcp.cli --port 8080 --project-dir /tmp/test-project &
+        uv run -m agent_mcp.cli start --port 8080 --project-dir /tmp/test-project --no-tui &
         echo $! > api_server.pid
-        sleep 5  # Wait for server to start
+        sleep 10  # Wait for server to start
       env:
         AGENT_MCP_DB_HOST: localhost
         AGENT_MCP_DB_PORT: 5432
@@ -99,6 +102,9 @@ jobs:
         AGENT_MCP_DASHBOARD_PORT: 3001
         EMBEDDING_PROVIDER: ollama
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-test123456789012345678901234567890' }}
+    
+    - name: Install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
     
     - name: Check API health endpoint
       run: |
@@ -117,7 +123,7 @@ jobs:
           echo "API health check failed after $max_attempts attempts"
           exit 1
         fi
-        curl -v http://localhost:8080/health | jq .
+        curl -s http://localhost:8080/health | jq .
     
     - name: Check API readiness endpoint
       run: |
