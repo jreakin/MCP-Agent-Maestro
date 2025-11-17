@@ -378,7 +378,11 @@ def detect_project_setup_commands(worktree_path: str) -> List[str]:
         if os.path.exists(os.path.join(worktree_path, "requirements.txt")):
             setup_commands.append("pip install -r requirements.txt")
         elif os.path.exists(os.path.join(worktree_path, "pyproject.toml")):
-            setup_commands.append("pip install -e .")
+            # Prefer uv if uv.lock exists, otherwise use standard pip
+            if os.path.exists(os.path.join(worktree_path, "uv.lock")):
+                setup_commands.append("uv pip install -e .")
+            else:
+                setup_commands.append("pip install -e .")
         elif os.path.exists(os.path.join(worktree_path, "setup.py")):
             setup_commands.append("pip install -e .")
         

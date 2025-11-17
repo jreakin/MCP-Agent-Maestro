@@ -1,0 +1,205 @@
+name: Deploy and Health Check
+
+on:
+  push:
+    branches: [ main, develop, feature/port-3000-default ]
+  pull_request:
+    branches: [ main, develop, feature/port-3000-default ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: agent_mcp
+          POSTGRES_USER: agent_mcp
+          POSTGRES_PASSWORD: agent_mcp_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: agent_mcp/dashboard/package-lock.json
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install Python dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Install Dashboard dependencies
+      working-directory: agent_mcp/dashboard
+      run: npm ci
+    
+    - name: Build Dashboard
+      working-directory: agent_mcp/dashboard
+      run: npm run build
+      env:
+        NODE_ENV: production
+        DOCKER_BUILD: true
+    
+    - name: Set up environment variables
+      run: |
+        echo "AGENT_MCP_DB_HOST=localhost" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_PORT=5432" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_NAME=agent_mcp" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_USER=agent_mcp" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_PASSWORD=agent_mcp_password" >> $GITHUB_ENV
+        echo "AGENT_MCP_API_PORT=8080" >> $GITHUB_ENV
+        echo "AGENT_MCP_DASHBOARD_PORT=3001" >> $GITHUB_ENV
+        echo "EMBEDDING_PROVIDER=ollama" >> $GITHUB_ENV
+        echo "MCP_PROJECT_DIR=/tmp/test-project" >> $GITHUB_ENV
+    
+    - name: Create project directory
+      run: mkdir -p /tmp/test-project
+    
+    - name: Wait for PostgreSQL
+      run: |
+        until pg_isready -h localhost -p 5432 -U agent_mcp; do
+          echo "Waiting for PostgreSQL..."
+          sleep 1
+        done
+    
+    - name: Initialize database schema
+      run: |
+        python3 -c "from agent_mcp.db.postgres_schema import init_database; init_database()"
+    
+    - name: Start API server in background
+      run: |
+        uv run -m agent_mcp.cli --port 8080 --project-dir /tmp/test-project &
+        echo $! > api_server.pid
+        sleep 5  # Wait for server to start
+      env:
+        AGENT_MCP_DB_HOST: localhost
+        AGENT_MCP_DB_PORT: 5432
+        AGENT_MCP_DB_NAME: agent_mcp
+        AGENT_MCP_DB_USER: agent_mcp
+        AGENT_MCP_DB_PASSWORD: agent_mcp_password
+        AGENT_MCP_API_PORT: 8080
+        AGENT_MCP_DASHBOARD_PORT: 3001
+        EMBEDDING_PROVIDER: ollama
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-test123456789012345678901234567890' }}
+    
+    - name: Check API health endpoint
+      run: |
+        max_attempts=30
+        attempt=0
+        while [ $attempt -lt $max_attempts ]; do
+          if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+            echo "API health check passed!"
+            break
+          fi
+          attempt=$((attempt + 1))
+          echo "Waiting for API to be healthy... (attempt $attempt/$max_attempts)"
+          sleep 2
+        done
+        if [ $attempt -eq $max_attempts ]; then
+          echo "API health check failed after $max_attempts attempts"
+          exit 1
+        fi
+        curl -v http://localhost:8080/health | jq .
+    
+    - name: Check API readiness endpoint
+      run: |
+        response=$(curl -s http://localhost:8080/health/ready)
+        echo "$response" | jq .
+        ready=$(echo "$response" | jq -r '.ready')
+        if [ "$ready" != "true" ]; then
+          echo "Readiness check failed"
+          exit 1
+        fi
+    
+    - name: Check API liveness endpoint
+      run: |
+        response=$(curl -s http://localhost:8080/health/live)
+        echo "$response" | jq .
+        alive=$(echo "$response" | jq -r '.alive')
+        if [ "$alive" != "true" ]; then
+          echo "Liveness check failed"
+          exit 1
+        fi
+    
+    - name: Test API status endpoint
+      run: |
+        response=$(curl -s http://localhost:8080/api/status)
+        echo "$response" | jq .
+        if [ -z "$response" ]; then
+          echo "Status endpoint returned empty response"
+          exit 1
+        fi
+    
+    - name: Start Dashboard server
+      working-directory: agent_mcp/dashboard
+      run: |
+        npm start &
+        echo $! > dashboard_server.pid
+        sleep 5  # Wait for server to start
+      env:
+        NEXT_PUBLIC_DEFAULT_SERVER_HOST: localhost
+        NEXT_PUBLIC_DEFAULT_SERVER_PORT: 8080
+        PORT: 3001
+        NODE_ENV: production
+    
+    - name: Check Dashboard is serving
+      run: |
+        max_attempts=30
+        attempt=0
+        while [ $attempt -lt $max_attempts ]; do
+          if curl -f http://localhost:3001 > /dev/null 2>&1; then
+            echo "Dashboard is serving!"
+            break
+          fi
+          attempt=$((attempt + 1))
+          echo "Waiting for Dashboard to start... (attempt $attempt/$max_attempts)"
+          sleep 2
+        done
+        if [ $attempt -eq $max_attempts ]; then
+          echo "Dashboard failed to start after $max_attempts attempts"
+          exit 1
+        fi
+        echo "Dashboard health check passed!"
+    
+    - name: Verify Dashboard HTML response
+      run: |
+        response=$(curl -s http://localhost:3001)
+        if echo "$response" | grep -q "<!DOCTYPE html>"; then
+          echo "Dashboard returns valid HTML"
+        else
+          echo "Dashboard HTML check failed"
+          echo "Response preview:"
+          echo "$response" | head -20
+          exit 1
+        fi
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        if [ -f api_server.pid ]; then
+          kill $(cat api_server.pid) 2>/dev/null || true
+        fi
+        if [ -f agent_mcp/dashboard/dashboard_server.pid ]; then
+          kill $(cat agent_mcp/dashboard/dashboard_server.pid) 2>/dev/null || true
+        fi
+        pkill -f "agent_mcp.cli" || true
+        pkill -f "next start" || true
+

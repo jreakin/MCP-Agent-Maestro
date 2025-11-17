@@ -1,0 +1,61 @@
+name: Test Local (Simplified)
+
+# This workflow is for local testing with act
+# It uses a manual PostgreSQL setup instead of services
+on:
+  workflow_dispatch:
+
+jobs:
+  test-local:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install PostgreSQL client
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y postgresql-client
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Set up environment variables
+      run: |
+        echo "AGENT_MCP_DB_HOST=host.docker.internal" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_PORT=5432" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_NAME=agent_mcp" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_USER=agent_mcp" >> $GITHUB_ENV
+        echo "AGENT_MCP_DB_PASSWORD=agent_mcp_password" >> $GITHUB_ENV
+        echo "EMBEDDING_PROVIDER=ollama" >> $GITHUB_ENV
+        echo "AGENT_MCP_API_PORT=8080" >> $GITHUB_ENV
+        echo "AGENT_MCP_DASHBOARD_PORT=3001" >> $GITHUB_ENV
+    
+    - name: Check if PostgreSQL is accessible
+      run: |
+        echo "Note: For local testing with act, start PostgreSQL manually:"
+        echo "docker run -d --name test-postgres -e POSTGRES_DB=agent_mcp -e POSTGRES_USER=agent_mcp -e POSTGRES_PASSWORD=agent_mcp_password -p 5432:5432 pgvector/pgvector:pg16"
+        echo ""
+        echo "Checking if PostgreSQL is accessible..."
+        timeout 5 bash -c 'until pg_isready -h host.docker.internal -p 5432 -U agent_mcp 2>/dev/null; do echo "Waiting..."; sleep 1; done' || echo "PostgreSQL not accessible - you may need to start it manually"
+    
+    - name: Initialize database schema
+      continue-on-error: true
+      run: |
+        python3 -c "from agent_mcp.db.postgres_schema import init_database; init_database()"
+    
+    - name: Run tests (excluding benchmarks)
+      continue-on-error: true
+      run: uv run pytest tests/ --ignore=tests/benchmarks -v --tb=short -x
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-test123456789012345678901234567890' }}
+        EMBEDDING_PROVIDER: ollama
+

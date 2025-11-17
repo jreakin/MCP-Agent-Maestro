@@ -1,0 +1,52 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '*.md'
+      - 'docs/**'
+      - 'README.md'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '*.md'
+      - 'docs/**'
+      - 'README.md'
+
+jobs:
+  spell-check:
+    name: Spell Check Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Check spelling
+      uses: streetsidesoftware/cspell-action@v8
+      with:
+        files: "**/*.md"
+        config: ".cspell.json"
+        incremental_files_only: false
+        check_dot_files: true
+      continue-on-error: true
+  
+  link-check:
+    name: Check Documentation Links
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Check links
+      uses: lycheeverse/lychee-action@v1
+      with:
+        args: --accept 200,403,429 --exclude-all-private --exclude mailto: \
+          --exclude localhost --exclude 127.0.0.1 \
+          *.md docs/**/*.md
+        fail: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

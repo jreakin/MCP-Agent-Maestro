@@ -1,13 +1,54 @@
 # 🎭 MCP Agent Maestro
 
-![Agent MCP Maestro Logo](/assets/images/agent-mcp-maestro-banner.png)
+![Agent MCP Maestro Logo](assets/images/agent-mcp-maestro-banner.png)
 
 
 ---
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](https://opensource.org/licenses/AGPL-3.0)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://github.com/jreakin/mcp-agent-maestro/workflows/Tests/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions)
+[![Tests](https://github.com/jreakin/mcp-agent-maestro/workflows/Tests/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/tests.yml)
+[![Lint](https://github.com/jreakin/mcp-agent-maestro/workflows/Code%20Quality/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/lint.yml)
+[![Security](https://github.com/jreakin/mcp-agent-maestro/workflows/Security/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/security.yml)
+[![Deploy Check](https://github.com/jreakin/mcp-agent-maestro/workflows/Deploy%20and%20Health%20Check/badge.svg)](https://github.com/jreakin/mcp-agent-maestro/actions/workflows/deploy-check.yml)
+[![Coverage](https://codecov.io/gh/jreakin/mcp-agent-maestro/branch/main/graph/badge.svg)](https://codecov.io/gh/jreakin/mcp-agent-maestro)
+
+**Total Tests:** 138 (127 passed, 11 skipped)
+
+### 🛠️ Built With
+
+**Core Python Stack:**
+- **Pydantic** `>=2.0` - Data validation and settings management
+- **PydanticAI** `>=0.0.12` (optional) - Structured agent orchestration
+- **Starlette** - Modern async web framework
+- **Uvicorn** - ASGI server for high-performance async applications
+- **Click** - Command-line interface framework
+- **AnyIO** - Async I/O library
+
+**AI & LLM Integration:**
+- **OpenAI** - GPT models and embeddings
+- **MCP SDK** `>=1.8.1` - Model Context Protocol implementation
+
+**Database & Storage:**
+- **PostgreSQL** with **pgvector** `>=0.3.0` - Vector search and persistent storage
+- **psycopg2-binary** `>=2.9.0` - PostgreSQL adapter
+
+**Data Serialization:**
+- **TOON Format** `>=0.1.0` - Token-Oriented Object Notation for efficient serialization
+
+**Frontend Dashboard:**
+- **Next.js** `15.3.4` - React framework
+- **React** `^19.0.0` - UI library
+- **Radix UI** - Accessible component primitives
+- **Tailwind CSS** `^4` - Utility-first CSS framework
+- **Recharts** - Data visualization
+
+**Development Tools:**
+- **pytest** `>=8.3.2` - Testing framework
+- **ruff** `>=0.5.5` - Fast Python linter and formatter
+- **mypy** - Static type checking
+- **mutmut** - Mutation testing
+- **hypothesis** `>=6.100` - Property-based testing
 
 > **Orchestrating AI Agents Like a Symphony** 🎵
 
