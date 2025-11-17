@@ -1,0 +1,54 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop, feature/port-3000-default ]
+  pull_request:
+    branches: [ main, develop, feature/port-3000-default ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: agent_mcp
+          POSTGRES_USER: agent_mcp
+          POSTGRES_PASSWORD: agent_mcp_password
+        options: >-
+          --health-cmd "sh -c 'pg_isready -U agent_mcp'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Run tests
+      if: hashFiles('tests') != ''
+      run: uv run pytest tests/ -v --tb=short
+      env:
+        AGENT_MCP_DB_HOST: localhost
+        AGENT_MCP_DB_PORT: 5432
+        AGENT_MCP_DB_NAME: agent_mcp
+        AGENT_MCP_DB_USER: agent_mcp
+        AGENT_MCP_DB_PASSWORD: agent_mcp_password
+    
+    - name: No tests found
+      if: hashFiles('tests') == ''
+      run: echo "No tests directory found - skipping tests"

@@ -1,0 +1,31 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, develop, feature/port-3000-default ]
+    paths:
+      - '*.md'
+      - 'docs/**'
+      - 'README.md'
+  pull_request:
+    branches: [ main, develop, feature/port-3000-default ]
+    paths:
+      - '*.md'
+      - 'docs/**'
+      - 'README.md'
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check documentation exists
+      run: |
+        if [ -d "docs" ]; then
+          echo "✓ Documentation directory exists"
+          ls -la docs/ | head -10
+        else
+          echo "⚠ No docs directory found"
+        fi

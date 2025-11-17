@@ -1,0 +1,28 @@
+name: Deploy and Health Check
+
+on:
+  push:
+    branches: [ main, develop, feature/port-3000-default ]
+  pull_request:
+    branches: [ main, develop, feature/port-3000-default ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install dependencies
+      run: uv pip install --system -e ".[dev]"
+    
+    - name: Build check
+      run: echo "Build successful"

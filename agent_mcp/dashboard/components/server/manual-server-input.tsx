@@ -71,7 +71,7 @@ export function ManualServerInput() {
           <Input
             id="port"
             type="number"
-            placeholder="8080"
+            placeholder="3000"
             value={port}
             onChange={(e) => setPort(e.target.value)}
           />
