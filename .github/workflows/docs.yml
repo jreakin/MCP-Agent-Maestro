@@ -2,13 +2,13 @@ name: Documentation
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/port-3000-default ]
     paths:
       - '*.md'
       - 'docs/**'
       - 'README.md'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/port-3000-default ]
     paths:
       - '*.md'
       - 'docs/**'
@@ -43,9 +43,7 @@ jobs:
     - name: Check links
       uses: lycheeverse/lychee-action@v1
       with:
-        args: --accept 200,403,429 --exclude-all-private --exclude mailto: \
-          --exclude localhost --exclude 127.0.0.1 \
-          *.md docs/**/*.md
+        args: --accept 200,403,429 --exclude-all-private --exclude mailto: --exclude localhost --exclude 127.0.0.1 *.md docs/**/*.md
         fail: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

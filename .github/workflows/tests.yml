@@ -18,7 +18,7 @@ jobs:
           POSTGRES_USER: agent_mcp
           POSTGRES_PASSWORD: agent_mcp_password
         options: >-
-          --health-cmd pg_isready
+          --health-cmd pg_isready -U agent_mcp
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

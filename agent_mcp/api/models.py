@@ -62,7 +62,15 @@ class TaskCreate(BaseModel):
     due_date: Optional[str] = Field(None, description="Due date in ISO format")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
     
-    @field_validator('title', 'description', 'assigned_to', 'parent_task')
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        """Ensure title is not empty and strip whitespace."""
+        if not v.strip():
+            raise ValueError('Title cannot be empty')
+        return validate_safe_string(v.strip())
+    
+    @field_validator('description', 'assigned_to', 'parent_task')
     @classmethod
     def validate_string_fields(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
