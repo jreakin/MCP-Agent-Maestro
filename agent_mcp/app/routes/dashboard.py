@@ -122,13 +122,13 @@ async def node_details_api_route(request: Request) -> JSONResponse:
                 cursor.execute("SELECT timestamp, agent_id, action_type FROM agent_actions WHERE (action_type = 'updated_context' OR action_type = 'update_project_context') AND details LIKE %s ORDER BY timestamp DESC LIMIT 5", (f'%"{actual_id_from_node}"%',))
                 details['actions'] = [serialize_datetime(dict(r)) for r in cursor.fetchall()]
             elif node_type_from_id == 'file':
-                details['data'] = {'filepath': actual_id_from_node, 'info': g.file_map.get(actual_id_from_node, {})}
+                details['data'] = {'filepath': actual_id_from_node, 'info': serialize_datetime(g.file_map.get(actual_id_from_node, {}))}
                 cursor.execute("SELECT timestamp, agent_id, action_type, details FROM agent_actions WHERE (action_type LIKE '%_file' OR action_type LIKE 'claim_file_%' OR action_type = 'release_file') AND details LIKE %s ORDER BY timestamp DESC LIMIT 5", (f'%"{actual_id_from_node}"%',))
-                details['actions'] = [dict(r) for r in cursor.fetchall()]
+                details['actions'] = [serialize_datetime(dict(r)) for r in cursor.fetchall()]
             elif node_type_from_id == 'admin':
                 details['data'] = {'name': 'Admin User / System'}
                 cursor.execute("SELECT timestamp, action_type, task_id, details FROM agent_actions WHERE agent_id = 'admin' ORDER BY timestamp DESC LIMIT 10")
-                details['actions'] = [dict(r) for r in cursor.fetchall()]
+                details['actions'] = [serialize_datetime(dict(r)) for r in cursor.fetchall()]
             if not details.get('data') and node_type_from_id not in ['admin']:
                  return JSONResponse({'error': 'Node data not found or type unrecognized'}, status_code=404)
     except Exception as e:
